@@ -1,0 +1,2 @@
+import {getStudentSession} from '../../../student-session';
+export const dynamic='force-dynamic';export async function GET(req:Request){const session=await getStudentSession(req);if(!session)return Response.json({error:'Använd din inbjudningskod för att logga in.'},{status:401,headers:{'Cache-Control':'no-store'}});return Response.json({studentId:session.studentId},{headers:{'Cache-Control':'no-store'}})}

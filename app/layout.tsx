@@ -1,0 +1,1 @@
+import type {Metadata} from 'next';import './globals.css';export const metadata:Metadata={title:'Lärvy – läraradministration',description:'Planering, resultat och rapporter per elev'};export default function Layout({children}:{children:React.ReactNode}){return <html lang="sv"><head><link rel="stylesheet" href="/theme.css"/></head><body>{children}</body></html>}

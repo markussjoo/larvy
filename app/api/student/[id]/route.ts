@@ -1,0 +1,7 @@
+import {getChatGPTUser} from '../../../chatgpt-auth';
+import {getDb} from '../../../../db';
+import {students,plans,materials,invitations} from '../../../../db/schema';
+import {and,eq} from 'drizzle-orm';
+import {getStudentSession} from '../../../student-session';
+export const dynamic='force-dynamic';
+export async function GET(_req:Request,{params}:{params:Promise<{id:string}>}){const user=await getChatGPTUser();const session=await getStudentSession(_req);if(!user&&!session)return Response.json({error:'Logga in med din elevkod.'},{status:401});const {id}=await params,db=getDb();const [student]=await db.select().from(students).where(eq(students.id,id));if(!student)return Response.json({error:'Elevsidan hittades inte'},{status:404});if(student.owner!==user?.userId&&session?.studentId!==id){const access=await db.select({id:invitations.id}).from(invitations).where(and(eq(invitations.studentId,id),eq(invitations.usedBy,user?.userId||'')));if(!access.length)return Response.json({error:'Elevsidan hittades inte'},{status:404})}const assigned=await db.select({id:plans.id,due:plans.due,status:plans.status,grade:plans.grade,comment:plans.comment,title:materials.title,kind:materials.kind,body:materials.body}).from(plans).innerJoin(materials,eq(plans.materialId,materials.id)).where(and(eq(plans.studentId,id),eq(plans.owner,student.owner)));return Response.json({student:{id:student.id,name:student.name,group:student.group},plans:assigned},{headers:{'Cache-Control':'no-store'}})}
