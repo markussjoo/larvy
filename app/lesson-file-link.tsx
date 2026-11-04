@@ -1,0 +1,4 @@
+'use client';
+import {useState} from 'react';
+import {readDemoFile,type LessonFile} from './lesson-files';
+export default function LessonFileLink({file}:{file:LessonFile}){const [error,setError]=useState('');return <span className="lesson-file-attachment"><a href={file.demo?'#':'/api/lesson-files/'+file.id} download={file.name} onClick={async e=>{if(!file.demo)return;e.preventDefault();setError('');try{const blob=await readDemoFile(file.id),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=file.name;a.click();setTimeout(()=>URL.revokeObjectURL(url),10000)}catch(e){setError(e instanceof Error?e.message:'Filen kunde inte hämtas.')}}}>▤ {file.name} <small>↓ Ladda ner · {file.size<1024*1024?Math.ceil(file.size/1024)+' kB':(file.size/1024/1024).toFixed(1)+' MB'}</small></a>{error&&<span role="alert" className="error">{error}</span>}</span>}
