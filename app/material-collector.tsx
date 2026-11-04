@@ -1,0 +1,37 @@
+'use client';
+import {useRef,useState} from 'react';
+import {collectMaterial,type CollectedMaterial} from './material-import';
+type Item={id:string;file:File;status:'waiting'|'working'|'done'|'warning'|'error';detail:string};
+export default function MaterialCollector({demo,locked,sourceCount,onAdd,onWeb,onBusy}:{demo:boolean;locked:boolean;sourceCount:number;onAdd:(material:CollectedMaterial)=>void;onWeb:(url:string)=>Promise<void>;onBusy:(busy:boolean)=>void}){
+ const [mode,setMode]=useState('file'),[items,setItems]=useState<Item[]>([]),[working,setWorking]=useState(false),[dragging,setDragging]=useState(false),[error,setError]=useState(''),[url,setUrl]=useState(''),[webDone,setWebDone]=useState(false);
+ const input=useRef<HTMLInputElement>(null),running=useRef(false);const disabled=locked||working;
+ const change=(id:string,values:Partial<Item>)=>setItems(list=>list.map(item=>item.id===id?{...item,...values}:item));
+ async function process(entries:Item[]){
+  if(running.current||locked)return;running.current=true;setWorking(true);onBusy(true);setError('');
+  try{for(const item of entries){
+   change(item.id,{status:'working',detail:'Laddar upp…'});
+   try{const result=await collectMaterial(item.file,demo,detail=>change(item.id,{detail}));onAdd(result);change(item.id,{status:result.warning?'warning':'done',detail:result.warning||(result.text?'Text och originalfil tillagda i utkastet.':'Tillagd som nedladdningsbar bilaga.')})}
+   catch(e){change(item.id,{status:'error',detail:e instanceof Error?e.message:'Filen kunde inte läggas till. Försök igen.'})}
+  }}finally{running.current=false;setWorking(false);onBusy(false);if(input.current)input.current.value=''}
+ }
+ function choose(files:FileList|File[]|null){
+  if(!files||disabled||running.current)return;const selected=Array.from(files);if(!selected.length)return;
+  if(sourceCount+selected.length>30){setError('Högst 30 materialkällor per lektion. Välj färre filer eller skapa ett nytt utkast.');if(input.current)input.current.value='';return}
+  const entries:Item[]=selected.map(file=>({id:crypto.randomUUID(),file,status:'waiting',detail:'Väntar på uppladdning'}));setItems(list=>[...list,...entries]);void process(entries);
+ }
+ async function web(e:React.FormEvent){e.preventDefault();if(disabled||running.current)return;running.current=true;setWorking(true);onBusy(true);setError('');setWebDone(false);try{await onWeb(url);setUrl('');setWebDone(true)}catch(e){setError(e instanceof Error?e.message:'Webbsidan kunde inte läsas.')}finally{running.current=false;setWorking(false);onBusy(false)}}
+ return <section className="panel material-collector"><div className="collector-heading"><div><h3>Samla material</h3><p>Samla dina filer och texter till en lektion.</p></div><span className="collector-language">OCR · Svenska + English</span></div>
+ <div className="collector-tabs" role="tablist" aria-label="Välj materialkälla">{[{id:'file',name:'Ladda upp filer'},{id:'text',name:'Egen text'},{id:'web',name:'Webbsida'}].map(tab=><button type="button" key={tab.id} role="tab" aria-selected={mode===tab.id} disabled={disabled} onClick={()=>{setMode(tab.id);setError('')}} className={mode===tab.id?'':'light'}>{tab.name}</button>)}</div>
+ {mode==='file'&&<div role="tabpanel" aria-label="Ladda upp filer"><input ref={input} className="collector-native-input" id="material-files" type="file" multiple disabled={disabled} onChange={e=>choose(e.target.files)} tabIndex={-1}/>
+ <div className={'collector-dropzone '+(dragging?'is-dragging':'')+(disabled?' is-disabled':'')} onDragOver={e=>{e.preventDefault();if(!disabled)setDragging(true)}} onDragLeave={e=>{if(!e.currentTarget.contains(e.relatedTarget as Node|null))setDragging(false)}} onDrop={e=>{e.preventDefault();setDragging(false);choose(e.dataTransfer.files)}}>
+ <span className="collector-upload-symbol" aria-hidden="true">↑</span><strong>Dra dina filer hit</strong><span>eller välj en eller flera filer från din enhet</span><button type="button" disabled={disabled} onClick={()=>input.current?.click()}>Välj filer</button><small>Alla filformat · Max 15 MB per fil</small></div>
+ <div className="collector-ocr-note"><span aria-hidden="true">▤</span><div><strong>Automatisk texttolkning</strong><p>Skannade PDF-sidor texttolkas automatiskt på svenska och engelska.</p></div><span className="collector-auto">På</span></div>
+ <p className="collector-format-note">Text från PDF, Word (.docx) och textfiler läggs i redigeraren. Alla originalfiler sparas som bilagor.</p>
+ <details className="collector-details"><summary>Om filstorlek och texttolkning</summary><p>PDF: högst 100 sidor, varav högst 25 skannade sidor för OCR per fil. Språkstödet laddas ner första gången. Texttolkning kan ta en stund. Filer som inte kan texttolkas finns kvar som bilagor.</p></details>
+ </div>}
+ {mode==='text'&&<div className="collector-text-panel" role="tabpanel" aria-label="Egen text"><h4>Skriv med egna ord</h4><p>Skriv eller klistra in text i lektionsredigeraren nedan. Du kan kombinera den med dina uppladdade filer.</p><a href="#lesson-body">Till lektionsredigeraren ↓</a></div>}
+ {mode==='web'&&<form className="collector-web-panel" role="tabpanel" aria-label="Webbsida" onSubmit={web}><label htmlFor="collector-url">Länk till webbsida</label><div className="builder-url"><input id="collector-url" type="url" required value={url} disabled={disabled} onChange={e=>setUrl(e.target.value)} placeholder="https://exempel.se/artikel"/><button disabled={disabled||!url.trim()}>{working?'Hämtar…':'Lägg till text'}</button></div><p className="note">Öppna webbsidor stöds. Sidor bakom inloggning kan behöva kopieras manuellt.</p>{webDone&&<p className="success" role="status">Webbsidans text har lagts till i utkastet.</p>}</form>}
+ {error&&<p className="error" role="alert">{error}</p>}
+ {!!items.length&&<div className="collector-files"><div className="collector-list-heading"><h4>Dina filer</h4><span>{items.filter(i=>i.status==='done'||i.status==='warning').length} av {items.length} tillagda</span></div><ul aria-label="Uppladdade filer">{items.map(item=><li key={item.id} className={'collector-file '+item.status}><span className="collector-file-icon" aria-hidden="true">{item.status==='done'?'✓':item.status==='error'?'!':'▤'}</span><div className="collector-file-info"><strong>{item.file.name}</strong><small>{item.file.size<1024*1024?Math.max(1,Math.ceil(item.file.size/1024))+' kB':(item.file.size/1024/1024).toFixed(1)+' MB'}</small><p role={item.status==='error'?'alert':'status'}>{item.detail}</p>{item.status==='working'&&<progress aria-label={'Bearbetar '+item.file.name}/>}</div><span className="collector-file-status">{item.status==='waiting'?'Väntar':item.status==='working'?'Bearbetas':item.status==='done'?'Klart':item.status==='warning'?'Bilaga sparad':'Misslyckades'}</span>{item.status==='error'&&<button className="light" type="button" disabled={disabled} onClick={()=>void process([item])}>Försök igen</button>}</li>)}</ul></div>}
+ </section>
+}

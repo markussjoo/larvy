@@ -3,7 +3,7 @@ export const PDF_IMPORT_VERSION='4.10.38';
 export async function loadPdfReader(){const path='/pdf-reader-'+PDF_IMPORT_VERSION+'.mjs';return import(/* @vite-ignore */ path)}
 type OcrWord={text:string;confidence:number};
 type OcrResult={data:{text:string;confidence:number;blocks?:{paragraphs:{lines:{bbox:{x0:number;y0:number;x1:number;y1:number};words:OcrWord[]}[]}[]}[]|null}};
-type OcrWorker={recognize:(image:HTMLCanvasElement,options:any,output?:any)=>Promise<OcrResult>;terminate:()=>Promise<any>};
+type OcrWorker={reinitialize:(language:string)=>Promise<any>;recognize:(image:HTMLCanvasElement,options:any,output?:any)=>Promise<OcrResult>;terminate:()=>Promise<any>};
 // Keep this cache separate: older browser caches contain the smaller integer model.
 const OCR_LANG_PATH='https://cdn.jsdelivr.net/gh/naptha/tessdata@gh-pages/4.0.0_best';
 export function extractPdfText(items:any[]):string{
@@ -45,6 +45,7 @@ function contrastCopy(source:HTMLCanvasElement){
  for(let i=0;i<data.length;i+=4){const gray=.299*data[i]+.587*data[i+1]+.114*data[i+2];const value=range>30&&range<210?Math.max(0,Math.min(255,(gray-low)*255/range)):gray;data[i]=data[i+1]=data[i+2]=value;data[i+3]=255}
  ctx.putImageData(image,0,0);return canvas;
 }
+function languageScores(text:string){const tokens=text.toLowerCase().match(/\p{L}+/gu)||[];const english=new Set(['the','and','is','are','with','from','your','you','this','that','to','of','for','not','has','have','will','be','an','it','as','how','which','their']);const swedish=new Set(['och','att','det','är','en','ett','som','med','för','på','till','den','av','inte','har','kan','ska','om','eller','från','hur','vilken','deras']);return {english:tokens.filter(t=>english.has(t)).length,swedish:tokens.filter(t=>swedish.has(t)).length}}
 function words(result:OcrResult){return result.data.blocks?.flatMap(b=>b.paragraphs.flatMap(p=>p.lines.flatMap(l=>l.words)))||[]}
 function uncertain(result:OcrResult){return words(result).filter(w=>w.text.replace(/[^\p{L}]/gu,'').length>=2&&w.confidence<75).length}
 function resultScore(result:OcrResult){return result.data.text.trim()?(Number(result.data.confidence)||0)-Math.min(15,uncertain(result)*2):-1}
@@ -66,14 +67,13 @@ export async function readPdfText(bytes:Uint8Array,reader:any,onProgress:(page:n
     if(options.forceOcr||needsOcr(text,items)){
      if(++ocrPages>25)throw Error('Högst 25 sidor kan texttolkas med OCR per import. Dela upp PDF-filen.');
      if(!worker){
-      status('Läser in noggrann OCR · svensk språkmodell…');
+      status('Läser in noggrann OCR · svenska och engelska…');
       const {createWorker}=await import('tesseract.js');
-      // Swedish is primary, so a/ä/å and o/ö are not competing with English dictionaries.
-      // The Swedish model also recognizes Latin text in English passages.
+      // Load both models, but recognize Swedish separately to protect å/ä/ö.
       let failed=false;let timer:ReturnType<typeof setTimeout>|undefined;let rejectStartup:(error:unknown)=>void=()=>{};const startupError=new Promise<never>((_,reject)=>{rejectStartup=reject});
-      const loading=createWorker('swe',1,{
+      const loading=createWorker(['swe','eng'],1,{
        workerPath:'/ocr-worker-6.0.1.min.js',corePath:'https://cdn.jsdelivr.net/npm/tesseract.js-core@6.0.0',
-       langPath:OCR_LANG_PATH,cachePath:'larvy-ocr-swe-best-v2',
+       langPath:OCR_LANG_PATH,cachePath:'larvy-ocr-swe-eng-best-v3',
        logger:(event:any)=>{if(event.status==='recognizing text')status(`Texttolkar sida ${currentPage} av ${total} · ${Math.round((event.progress||0)*100)} %`)},
        errorHandler:(error:any)=>rejectStartup(error),
       });
@@ -91,6 +91,7 @@ export async function readPdfText(bytes:Uint8Array,reader:any,onProgress:(page:n
       context.fillStyle='#fff';context.fillRect(0,0,canvas.width,canvas.height);
       await page.render({canvasContext:context,viewport,transform:[1,0,0,1,border,border],background:'rgb(255,255,255)'}).promise;
       const params={rotateAuto:true,tessedit_pageseg_mode:'3',user_defined_dpi:String(dpi),preserve_interword_spaces:'1'};
+      await worker.reinitialize('swe');
       let result=await worker.recognize(canvas,params,{blocks:true});
       if(result.data.confidence<85||uncertain(result)>0){
        status(`Texttolkar med förbättrad bild · sida ${i} av ${total}…`);
@@ -104,6 +105,14 @@ export async function readPdfText(bytes:Uint8Array,reader:any,onProgress:(page:n
          if(better(alternative,result))result=alternative;
         }
        }finally{if(enhanced!==canvas){enhanced.width=0;enhanced.height=0}}
+      }
+      const language=languageScores(result.data.text);
+      if(language.english>=2&&language.english>language.swedish){
+       status(`Texttolkar engelska · sida ${i} av ${total}…`);
+       await worker.reinitialize('eng');
+       const english=await worker.recognize(canvas,params,{blocks:true});
+       const detected=languageScores(english.data.text);
+       if(english.data.text.trim()&&detected.english>detected.swedish&&english.data.text.replace(/\s/g,'').length>=result.data.text.replace(/\s/g,'').length*.85)result=english;
       }
       const recognized=result.data.text.normalize('NFC').trim();if(recognized)text=recognized;
      }finally{canvas.width=0;canvas.height=0}
