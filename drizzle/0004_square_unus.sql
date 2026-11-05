@@ -1,0 +1,1 @@
+ALTER TABLE `plans` ADD `answers` text DEFAULT '{}' NOT NULL;
