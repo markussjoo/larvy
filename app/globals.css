@@ -6,3 +6,5 @@
 .lesson-exercise{border:1px solid #7460aa;border-radius:14px;padding:20px;margin:22px 0;background:#17152b;min-width:0}.lesson-exercise legend{font-weight:700;padding:0 8px}.lesson-exercise textarea{width:100%;min-height:110px}.lesson-option{display:flex;align-items:center;gap:12px;padding:10px 0}.lesson-option input{width:20px;height:20px;accent-color:#9863fa}.lesson-exercise:disabled{opacity:.9}.lesson-content textarea:disabled{color:inherit;opacity:1}.lesson-exercise .row{flex-wrap:wrap}
 
 .demo-student-picker{padding:16px 24px;background:#17152b;border-bottom:1px solid #7460aa}.demo-student-picker label{display:inline-flex;gap:12px;margin-left:24px;align-items:center}.demo-student-picker select{min-width:180px}
+
+.draft-footer-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.collector-file-select{width:18px!important;height:18px;flex-shrink:0;accent-color:#9863fa}.draft-delete-footer{flex-wrap:wrap;gap:10px}

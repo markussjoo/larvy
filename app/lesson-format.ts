@@ -24,3 +24,6 @@ export function validateLesson(body:string){return new TextEncoder().encode(body
 export function appendLessonFile(body:string,file:LessonFile){return encodeLesson([...(parseLesson(body)||(body?[{tag:'p',children:[{tag:'#text',text:body}]}]:[])),{tag:'file',file}])}
 
 export function materialLessonBody(kind:string,body:string){return kind==='Uppgift'&&!lessonExercises(body).length?encodeLesson([...(parseLesson(body)||[{tag:'p',children:[{tag:'#text',text:body}]}]),{tag:'exercise',exercise:{id:'legacy-task',type:'text',prompt:'Skriv ditt svar på uppgiften',options:[]}}]):body}
+
+export function lessonFiles(body:string):LessonFile[]{const files=new Map<string,LessonFile>();const walk=(nodes:LessonNode[])=>nodes.forEach(n=>{if(n.tag==='file'&&n.file)files.set(n.file.id,n.file);if(n.children)walk(n.children)});walk(parseLesson(body)||[]);return [...files.values()]}
+export function removeLessonFiles(body:string,ids:string[]){const nodes=parseLesson(body);if(!nodes)return body;const selected=new Set(ids);const prune=(nodes:LessonNode[]):LessonNode[]=>nodes.filter(n=>n.tag!=='file'||!n.file||!selected.has(n.file.id)).map(n=>({...n,...(n.children?{children:prune(n.children)}:{})}));return encodeLesson(prune(nodes))}
