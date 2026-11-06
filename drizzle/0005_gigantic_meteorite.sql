@@ -1,0 +1,1 @@
+ALTER TABLE `materials` ADD `published_at` text DEFAULT '' NOT NULL;

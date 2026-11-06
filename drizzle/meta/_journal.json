@@ -36,6 +36,13 @@
       "when": 1793877819966,
       "tag": "0004_square_unus",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1793957898459,
+      "tag": "0005_gigantic_meteorite",
+      "breakpoints": true
     }
   ]
 }
