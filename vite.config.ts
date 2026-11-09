@@ -44,9 +44,13 @@ export default defineConfig(async ({ command }) => {
   const { cloudflare } = await import("@cloudflare/vite-plugin");
 
   return {
+    optimizeDeps: {
+      exclude: ["linkedom"],
+    },
     server: {
+      allowedHosts: true as const,
       ...(managedLinux
-        ? { host: "0.0.0.0", allowedHosts: ["terminal.local"] }
+        ? { host: "0.0.0.0" }
         : {}),
       ...(isCodexSeatbeltSandbox
         ? { watch: { useFsEvents: false, usePolling: true } }

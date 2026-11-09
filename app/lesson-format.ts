@@ -2,12 +2,42 @@ import {validLessonFile,type LessonFile} from './lesson-files';
 // A small, validated document format. Raw imported HTML is never rendered.
 export const RICH_PREFIX='LARVY_LESSON_V1:';
 export const MAX_LESSON_BYTES=650000;
-export type Exercise={id:string;type:'text'|'choice';prompt:string;options:string[]};
+export type Exercise={id:string;type:'text'|'choice';prompt:string;options:string[];correctOptions?:string[]};
 export type Answers=Record<string,string|string[]>;
-export function validExercise(e:any):e is Exercise{return !!e&&typeof e.id==='string'&&/^[a-zA-Z0-9_-]{1,80}$/.test(e.id)&&['text','choice'].includes(e.type)&&typeof e.prompt==='string'&&!!e.prompt.trim()&&e.prompt.length<=2000&&Array.isArray(e.options)&&e.options.length<=20&&e.options.every((x:any)=>typeof x==='string'&&!!x.trim()&&x.length<=300)&&new Set(e.options).size===e.options.length&&(e.type==='text'?e.options.length===0:e.options.length>=2)}
+export function validExercise(e:any):e is Exercise{return !!e&&typeof e.id==='string'&&/^[a-zA-Z0-9_-]{1,80}$/.test(e.id)&&['text','choice'].includes(e.type)&&typeof e.prompt==='string'&&!!e.prompt.trim()&&e.prompt.length<=2000&&Array.isArray(e.options)&&e.options.length<=20&&e.options.every((x:any)=>typeof x==='string'&&!!x.trim()&&x.length<=300)&&new Set(e.options).size===e.options.length&&(e.type==='text'?e.options.length===0&&(!e.correctOptions||Array.isArray(e.correctOptions)&&e.correctOptions.length===0):e.options.length>=2&&(e.correctOptions===undefined||Array.isArray(e.correctOptions)&&e.correctOptions.length<=e.options.length&&new Set(e.correctOptions).size===e.correctOptions.length&&e.correctOptions.every((x:any)=>typeof x==='string'&&e.options.includes(x))))}
 export function lessonExercises(body:string):Exercise[]{const out:Exercise[]=[];const walk=(n:LessonNode)=>{if(n.exercise)out.push(n.exercise);n.children?.forEach(walk)};parseLesson(body)?.forEach(walk);return out}
 export function validAnswers(body:string,a:any){if(!a||typeof a!=='object'||Array.isArray(a))return false;const questions=lessonExercises(body);return Object.keys(a).length<=questions.length&&Object.entries(a).every(([id,v])=>{const q=questions.find(q=>q.id===id);return !!q&&(q.type==='text'?typeof v==='string'&&v.length<=20000:Array.isArray(v)&&v.length<=q.options.length&&new Set(v).size===v.length&&v.every(x=>typeof x==='string'&&q.options.includes(x)))})}
 export const isLesson=(kind:string)=>kind==='Lektion'||kind==='Uppgift';
+export const isInteractiveMaterial=(kind:string)=>isLesson(kind)||kind==='Prov';
+export type AutoGradeResult={totalGradable:number;correctCount:number;totalChoice:number;totalText:number;details:Record<string,{correct:boolean;expected:string[];given:string[]}>};
+export function gradeLesson(body:string,answers:Answers):AutoGradeResult{
+ const exercises=lessonExercises(body);
+ let totalGradable=0,correctCount=0,totalChoice=0,totalText=0;
+ const details:AutoGradeResult['details']={};
+ for(const q of exercises){
+  if(q.type==='text'){totalText++;continue}
+  totalChoice++;
+  if(q.correctOptions&&q.correctOptions.length>0){
+   totalGradable++;
+   const given=Array.isArray(answers[q.id])?(answers[q.id] as string[]):[];
+   const expected=q.correctOptions;
+   const isCorrect=given.length===expected.length&&expected.every(opt=>given.includes(opt));
+   if(isCorrect)correctCount++;
+   details[q.id]={correct:isCorrect,expected,given};
+  }
+ }
+ return {totalGradable,correctCount,totalChoice,totalText,details};
+}
+export function stripAnswerKey(body:string):string{
+ const nodes=parseLesson(body);
+ if(!nodes)return body;
+ const clean=(n:LessonNode):LessonNode=>({
+  ...n,
+  ...(n.exercise?{exercise:{id:n.exercise.id,type:n.exercise.type,prompt:n.exercise.prompt,options:n.exercise.options}}:{}),
+  ...(n.children?{children:n.children.map(clean)}:{}),
+ });
+ return encodeLesson(nodes.map(clean));
+}
 export type LessonNode={tag:string;text?:string;children?:LessonNode[];hand?:boolean;src?:string;alt?:string;file?:LessonFile;exercise?:Exercise};
 const tags=new Set(['p','div','br','strong','b','em','i','u','s','h2','h3','ul','ol','li','blockquote','span','font','img','figure','figcaption','file','exercise']);
 export function validImage(src:unknown):src is string{return typeof src==='string'&&src.length<=220000&&/^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/.test(src)}

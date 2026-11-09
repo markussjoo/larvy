@@ -1,4 +1,4 @@
-import {isLesson,validateLesson,hasLessonContent} from '../../lesson-format';
+import {isInteractiveMaterial,validateLesson,hasLessonContent} from '../../lesson-format';
 import {getTeacherUser as getChatGPTUser} from '../../teacher-auth';
 import {getDb} from '../../../db';
 import {students,materials,plans,invitations,studentSessions} from '../../../db/schema';
@@ -10,7 +10,32 @@ export async function POST(req:Request){const user=await getChatGPTUser();if(!us
 else if(b.action==='new-invitation'){if(!text(b.studentId,100))return json({error:'Ogiltig elev'},400);const [student]=await db.select().from(students).where(and(eq(students.id,b.studentId),eq(students.owner,owner)));if(!student)return json({error:'Eleven hittades inte'},404);const code=crypto.randomUUID().replaceAll('-','').toUpperCase();await db.batch([db.delete(studentSessions).where(eq(studentSessions.studentId,student.id)),db.delete(invitations).where(and(eq(invitations.studentId,student.id),eq(invitations.owner,owner))),db.insert(invitations).values({id,owner,studentId:student.id,code,created:new Date().toISOString()})]);return json({ok:true,studentId:student.id,code});}
 else if(b.action==='delete-student'){if(!text(b.studentId,100)||!text(b.confirmName,120))return json({error:'Ogiltig elev'},400);const [student]=await db.select().from(students).where(and(eq(students.id,b.studentId),eq(students.owner,owner)));if(!student)return json({error:'Eleven hittades inte'},404);if(b.confirmName!==student.name)return json({error:'Elevens namn måste stämma för att bekräfta raderingen'},400);await db.batch([db.delete(studentSessions).where(eq(studentSessions.studentId,student.id)),db.delete(plans).where(and(eq(plans.studentId,student.id),eq(plans.owner,owner))),db.delete(invitations).where(and(eq(invitations.studentId,student.id),eq(invitations.owner,owner))),db.delete(students).where(and(eq(students.id,student.id),eq(students.owner,owner)))]);return json({ok:true,deletedStudentId:student.id});}
 else if(b.action==='material'){if(!['Lektion','Uppgift','Prov'].includes(b.kind)||!text(b.title,160)||!b.title.trim()||!text(b.body,20000))return json({error:'Kontrollera innehållets fält'},400);await db.insert(materials).values({id,owner,kind:b.kind==='Uppgift'?'Lektion':b.kind,title:b.title.trim(),body:b.body});}
-else if(b.action==='publish-material'){if(!text(b.id,100)||!b.id)return json({error:'Välj en lektion att publicera.'},400);const [material]=await db.select().from(materials).where(and(eq(materials.id,b.id),eq(materials.owner,owner)));if(!material||!isLesson(material.kind))return json({error:'Lektionen hittades inte.'},404);if(!material.title.trim()||!validateLesson(material.body)||!hasLessonContent(material.body))return json({error:'Lektionen behöver en rubrik och giltigt innehåll innan publicering.'},400);if(material.publishedAt)return json({ok:true,publishedMaterialId:material.id});await db.update(materials).set({publishedAt:new Date().toISOString()}).where(and(eq(materials.id,material.id),eq(materials.owner,owner),eq(materials.publishedAt,'')));return json({ok:true,publishedMaterialId:material.id});}
-else if(b.action==='assign'){const student=await db.select().from(students).where(and(eq(students.id,b.studentId||''),eq(students.owner,owner)));if(!student.length||!Array.isArray(b.materialIds)||!b.materialIds.length||b.materialIds.length>100||!text(b.due,10)||b.due&&!/^\d{4}-\d{2}-\d{2}$/.test(b.due))return json({error:'Välj elev, innehåll och giltigt datum'},400);const ids=[...new Set(b.materialIds)] as string[];for(const m of ids){const material=await db.select().from(materials).where(and(eq(materials.id,m),eq(materials.owner,owner)));if(!material.length)return json({error:'Innehåll saknas'},400)}await db.insert(plans).values(ids.map(materialId=>({id:crypto.randomUUID(),owner,studentId:b.studentId,materialId,due:b.due,status:'Ej påbörjad',grade:'',comment:'',updated:new Date().toISOString()})));}
+else if(b.action==='publish-material'){if(!text(b.id,100)||!b.id)return json({error:'Välj ett moment att publicera.'},400);const [material]=await db.select().from(materials).where(and(eq(materials.id,b.id),eq(materials.owner,owner)));if(!material||!isInteractiveMaterial(material.kind))return json({error:'Momentet hittades inte.'},404);if(!material.title.trim()||!validateLesson(material.body)||!hasLessonContent(material.body))return json({error:'Momentet behöver en rubrik och giltigt innehåll innan publicering.'},400);if(material.publishedAt)return json({ok:true,publishedMaterialId:material.id});await db.update(materials).set({publishedAt:new Date().toISOString()}).where(and(eq(materials.id,material.id),eq(materials.owner,owner),eq(materials.publishedAt,'')));return json({ok:true,publishedMaterialId:material.id});}
+else if(b.action==='assign'){
+ const allStudents=await db.select().from(students).where(eq(students.owner,owner));
+ let targetStudents=allStudents.filter(s=>s.id===(b.studentId||''));
+ if(typeof b.group==='string'&&b.group.trim()){
+  targetStudents=b.group==='*'?allStudents:allStudents.filter(s=>s.group.trim()===b.group.trim());
+ }else if(Array.isArray(b.studentIds)&&b.studentIds.length){
+  const set=new Set(b.studentIds);
+  targetStudents=allStudents.filter(s=>set.has(s.id));
+ }
+ if(!targetStudents.length||!Array.isArray(b.materialIds)||!b.materialIds.length||b.materialIds.length>100||!text(b.due,10)||b.due&&!/^\d{4}-\d{2}-\d{2}$/.test(b.due))return json({error:'Välj mottagare (elev eller klass), innehåll och giltigt datum'},400);
+ const ids=[...new Set(b.materialIds)] as string[];
+ for(const m of ids){const material=await db.select().from(materials).where(and(eq(materials.id,m),eq(materials.owner,owner)));if(!material.length)return json({error:'Innehåll saknas'},400)}
+ const existingPlans=await db.select().from(plans).where(eq(plans.owner,owner));
+ const existingSet=new Set(existingPlans.map(p=>`${p.studentId}:${p.materialId}`));
+ const toInsert:{id:string;owner:string;studentId:string;materialId:string;due:string;status:string;grade:string;comment:string;updated:string}[]=[];
+ let skippedCount=0;
+ const now=new Date().toISOString();
+ for(const st of targetStudents){
+  for(const materialId of ids){
+   if(existingSet.has(`${st.id}:${materialId}`)){skippedCount++;continue}
+   toInsert.push({id:crypto.randomUUID(),owner,studentId:st.id,materialId,due:b.due,status:'Ej påbörjad',grade:'',comment:'',updated:now});
+  }
+ }
+ if(toInsert.length>0)await db.insert(plans).values(toInsert);
+ return json({ok:true,assignedCount:toInsert.length,skippedCount,studentCount:targetStudents.length});
+}
 else if(b.action==='result'){if(!text(b.id,100)||!['Ej påbörjad','Pågår','Inlämnad','Godkänd','Ej godkänd'].includes(b.status)||!['','A','B','C','D','E','F','G','VG'].includes(b.grade)||!text(b.comment))return json({error:'Ogiltigt resultat'},400);if((b.status==='Godkänd'&&b.grade==='F')||(b.status==='Ej godkänd'&&['A','B','C','D','E','G','VG'].includes(b.grade)))return json({error:'Betyget stämmer inte med godkännandestatus'},400);const rows=await db.update(plans).set({status:b.status,grade:b.grade,comment:b.comment,updated:new Date().toISOString()}).where(and(eq(plans.id,b.id),eq(plans.owner,owner))).returning();if(!rows.length)return json({error:'Planeringen hittades inte'},404);}
 else return json({error:'Okänd åtgärd'},400);return json({ok:true});}

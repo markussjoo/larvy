@@ -70,8 +70,9 @@ export function sites({ mockAuth = true } = {}): Plugin {
         const hostname = authority.hostname
           .replace(/^\[|\]$/g, "")
           .toLowerCase();
+        const isTryCloudflare = hostname.endsWith(".trycloudflare.com");
         if (
-          !localHosts.has(hostname) ||
+          (!localHosts.has(hostname) && !isTryCloudflare) ||
           !localAddresses.has(request.socket.remoteAddress ?? "") ||
           url.origin !== authority.origin
         ) {

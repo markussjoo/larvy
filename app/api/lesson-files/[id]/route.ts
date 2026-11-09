@@ -1,11 +1,11 @@
 import {env} from 'cloudflare:workers';
-import {getChatGPTUser} from '../../../chatgpt-auth';
+import {getTeacherUser} from '../../../teacher-auth';
 import {getStudentSession} from '../../../student-session';
 export const dynamic='force-dynamic';
 const missing=()=>new Response('Filen hittades inte eller saknar åtkomst.',{status:404,headers:{'Cache-Control':'no-store'}});
 export async function GET(req:Request,{params}:{params:Promise<{id:string}>}){
  const {id}=await params;if(!/^[a-f0-9-]{36}$/.test(id)||!env.BUCKET)return missing();
- const user=await getChatGPTUser(),session=await getStudentSession(req);if(!user&&!session)return missing();
+ const user=await getTeacherUser(),session=await getStudentSession(req);if(!user&&!session)return missing();
  const file=await env.BUCKET.head('lesson-files/'+id);if(!file?.customMetadata?.owner)return missing();
  const owner=file.customMetadata.owner;
  if(user?.userId!==owner){
