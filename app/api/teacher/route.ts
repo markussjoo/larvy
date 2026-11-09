@@ -1,8 +1,8 @@
 import {isInteractiveMaterial,validateLesson,hasLessonContent} from '../../lesson-format';
 import {getTeacherUser as getChatGPTUser} from '../../teacher-auth';
 import {getDb} from '../../../db';
-import {students,materials,plans,invitations,studentSessions} from '../../../db/schema';
-import {and,eq} from 'drizzle-orm';
+import {students,materials,plans,invitations,studentSessions,lessonDrafts} from '../../../db/schema';
+import {and,eq,inArray} from 'drizzle-orm';
 export const dynamic='force-dynamic';
 const json=(v:unknown,s=200)=>Response.json(v,{status:s,headers:{'Cache-Control':'no-store'}});
 export async function GET(){const user=await getChatGPTUser();if(!user)return json({error:'Logga in för att använda läraradministrationen.'},401);const db=getDb();const owner=user.userId;return json({students:await db.select().from(students).where(eq(students.owner,owner)),materials:await db.select().from(materials).where(eq(materials.owner,owner)),plans:await db.select().from(plans).where(eq(plans.owner,owner)),invitations:await db.select().from(invitations).where(eq(invitations.owner,owner))});}
@@ -36,6 +36,20 @@ else if(b.action==='assign'){
  }
  if(toInsert.length>0)await db.insert(plans).values(toInsert);
  return json({ok:true,assignedCount:toInsert.length,skippedCount,studentCount:targetStudents.length});
+}
+else if(b.action==='delete-materials'){
+ const rawIds=Array.isArray(b.materialIds)?b.materialIds:(typeof b.id==='string'?[b.id]:[]);
+ const ids=[...new Set(rawIds.filter((x:unknown)=>typeof x==='string'&&x.length>0&&x.length<=100))] as string[];
+ if(!ids.length||ids.length>100)return json({error:'Markera minst en lektion eller ett prov att radera.'},400);
+ const owned=await db.select({id:materials.id}).from(materials).where(and(eq(materials.owner,owner),inArray(materials.id,ids)));
+ const ownedIds=owned.map(m=>m.id);
+ if(!ownedIds.length)return json({error:'Det markerade innehållet hittades inte.'},404);
+ await db.batch([
+  db.update(lessonDrafts).set({materialId:null,status:'draft'}).where(and(eq(lessonDrafts.owner,owner),inArray(lessonDrafts.materialId,ownedIds))),
+  db.delete(plans).where(and(eq(plans.owner,owner),inArray(plans.materialId,ownedIds))),
+  db.delete(materials).where(and(eq(materials.owner,owner),inArray(materials.id,ownedIds))),
+ ]);
+ return json({ok:true,deletedMaterialIds:ownedIds});
 }
 else if(b.action==='result'){if(!text(b.id,100)||!['Ej påbörjad','Pågår','Inlämnad','Godkänd','Ej godkänd'].includes(b.status)||!['','A','B','C','D','E','F','G','VG'].includes(b.grade)||!text(b.comment))return json({error:'Ogiltigt resultat'},400);if((b.status==='Godkänd'&&b.grade==='F')||(b.status==='Ej godkänd'&&['A','B','C','D','E','G','VG'].includes(b.grade)))return json({error:'Betyget stämmer inte med godkännandestatus'},400);const rows=await db.update(plans).set({status:b.status,grade:b.grade,comment:b.comment,updated:new Date().toISOString()}).where(and(eq(plans.id,b.id),eq(plans.owner,owner))).returning();if(!rows.length)return json({error:'Planeringen hittades inte'},404);}
 else return json({error:'Okänd åtgärd'},400);return json({ok:true});}
