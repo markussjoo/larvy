@@ -48,7 +48,22 @@ export function parseLesson(body:string):LessonNode[]|null{
 export function encodeLesson(nodes:LessonNode[]){return RICH_PREFIX+JSON.stringify(nodes)}
 export function lessonText(body:string){const nodes=parseLesson(body);if(!nodes)return body;const read=(n:LessonNode):string=>n.tag==='#text'?n.text||'':n.tag==='exercise'?n.exercise?.prompt||'':n.tag==='file'?n.file?.name||'':n.tag==='img'?'':n.tag==='br'?'\n':(n.children||[]).map(read).join('')+(['p','div','h2','h3','li'].includes(n.tag)?'\n':'');return nodes.map(read).join('')}
 export function hasLessonContent(body:string){const nodes=parseLesson(body);return !!lessonText(body).trim()||!!nodes?.some(function image(n):boolean{return n.tag==='img'||n.tag==='file'||!!n.children?.some(image)})}
-export function appendLessonText(body:string,text:string){const nodes=parseLesson(body);return nodes?encodeLesson([...nodes,{tag:'p',children:[{tag:'#text',text}]}]):body.trim()?body.trimEnd()+'\n\n'+text:text}
+export function appendLessonText(body: string, text: string) {
+  const rawParagraphs = text.split(/\r?\n\s*\r?\n/).map(p => p.trim()).filter(Boolean);
+  const paragraphs = rawParagraphs.length ? rawParagraphs : [text.trim()];
+  const newNodes: LessonNode[] = paragraphs.map(p => ({
+    tag: "p" as const,
+    children: [{ tag: "#text" as const, text: p }]
+  }));
+  const existing = parseLesson(body);
+  if (existing) {
+    return encodeLesson([...existing, ...newNodes]);
+  }
+  if (body.trim()) {
+    return body.trimEnd() + "\n\n" + text.trim();
+  }
+  return encodeLesson(newNodes);
+}
 export function validateLesson(body:string){return new TextEncoder().encode(body).length<=MAX_LESSON_BYTES&&lessonText(body).length<=150000&&(!body.startsWith(RICH_PREFIX)||parseLesson(body)!==null)}
 
 export function appendLessonFile(body:string,file:LessonFile){return encodeLesson([...(parseLesson(body)||(body?[{tag:'p',children:[{tag:'#text',text:body}]}]:[])),{tag:'file',file}])}

@@ -8,8 +8,10 @@ export function assetUrl(path: string): string {
 }
 
 export async function loadPdfReader() {
-  const path = assetUrl('/pdf-reader-' + PDF_IMPORT_VERSION + '.mjs');
-  return import(/* @vite-ignore */ path);
+  const url = typeof window !== 'undefined'
+    ? new URL(assetUrl('/pdf-reader-' + PDF_IMPORT_VERSION + '.mjs'), window.location.origin).href
+    : '/pdf-reader-' + PDF_IMPORT_VERSION + '.mjs';
+  return import(/* webpackIgnore: true */ /* @vite-ignore */ url);
 }
 
 type OcrWord = { text: string; confidence: number };
