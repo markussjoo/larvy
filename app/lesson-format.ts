@@ -50,7 +50,7 @@ export function validExercise(e: any): e is Exercise {
     if (!e.tableData || !Array.isArray(e.tableData.headers) || !Array.isArray(e.tableData.rows)) return false;
     const colCount = e.tableData.headers.length;
     if (colCount < 1 || colCount > 10 || e.tableData.rows.length > 100) return false;
-    return e.tableData.rows.every(r =>
+    return e.tableData.rows.every((r: any) =>
       Array.isArray(r.cells) && r.cells.length === colCount &&
       Array.isArray(r.editable) && r.editable.length === colCount
     );
