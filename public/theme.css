@@ -35,7 +35,7 @@
 /* Light mode theme - Vit bakgrund och ren modern layout som matchar mörkt läge */
 html[data-theme="light"] {
   color-scheme: light;
-  --bg: #eef4fb;
+  --bg: #F0F8FF;
   --surface: #ffffff;
   --surface-alt: #f4f8fd;
   --edge: #d8e3ef;
@@ -45,7 +45,7 @@ html[data-theme="light"] {
   --accent: #5e43eb;
 }
 html[data-theme="light"] body {
-  background: #eef4fb;
+  background: #F0F8FF;
   color: #0f172a;
 }
 html[data-theme="light"] .theme-toggle {
