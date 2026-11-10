@@ -1,18 +1,25 @@
 import type { LessonNode, Exercise } from './lesson-format';
 
 /**
- * Parses raw text or imported workbook HTML/text and detects:
- * 1. Workbook top banners (e.g. "Kapitel 5 – Berlinmuren", "Språkvägen s. 184–186")
- * 2. Section headers ("E Substantiv", "A Ordföljd – huvudsats", "B Konjunktioner", "HÖRA")
- * 3. Word bank boxes ("[och | så | men | för]" or "Välj bland orden i rutan...")
- * 4. Example callouts ("Exempel: ...")
- * 5. Fill-in-the-blank / Gap lines ("1 en gräns ____ flera gränser" or embedded "[ans|facit]")
- * 6. Choice / Checkbox lists ("1 Varför... [ ] ...")
- * 7. Vocabulary tables ("Ord | Översättning | Uttal | Skriv")
+ * Universal PDF/Workbook text parser:
+ * Automatically transforms raw PDF/OCR text into an exact interactive workbook layout:
+ * - Top header banners (e.g. "Kapitel 5 – Berlinmuren", "Språkvägen s. 184–186")
+ * - Section headers ("A Ordföljd – huvudsats", "B Konjunktioner", "HÖRA", "Ordlista", "E Substantiv")
+ * - Instruction texts ("Skriv substantiven i singular eller plural.", "Bilda meningar så att...")
+ * - Example callout boxes ("Exempel: ...")
+ * - Word bank boxes ("[och | så | men | för]")
+ * - Fill-in-the-blank / Gap lines (replacing lines/underscores/slashes with interactive input fields)
+ * - Checkbox lists (e.g., listening/reading tests with [ ] checkboxes)
+ * - Interactive vocabulary & word list tables
  */
 
 export function parseWorkbookTextToNodes(rawText: string): LessonNode[] {
-  const lines = rawText.split(/\r?\n/).map(l => l.trimEnd());
+  // Pre-normalize lines: replace continuous underscores, em-dashes or dots representing blanks
+  const normalized = rawText
+    .replace(/[—–]{3,}/g, '____')
+    .replace(/\.{3,}/g, '____');
+
+  const lines = normalized.split(/\r?\n/).map(l => l.trimEnd());
   const nodes: LessonNode[] = [];
 
   let i = 0;
@@ -23,14 +30,14 @@ export function parseWorkbookTextToNodes(rawText: string): LessonNode[] {
       continue;
     }
 
-    // 1. Check for Workbook header / banner (e.g., "Kapitel 5 – Berlinmuren")
-    const chapterMatch = line.match(/^Kapitel\s+\d+[\s–—-]+(.+)$/i);
+    // 1. Workbook top banner (e.g., "Kapitel 5 – Berlinmuren" + "Språkvägen s. 184–186" or "s. 191")
+    const chapterMatch = line.match(/^(?:Kapitel|Tema|Avsnitt)\s+\d+[\s–—-]+(.+)$/i) || line.match(/^Kapitel\s+\d+$/i);
     if (chapterMatch) {
       let pageRef = '';
-      if (i + 1 < lines.length && /^(?:Språkvägen\s+)?(?:s\.|sidorna)\s*\d+/i.test(lines[i + 1].trim())) {
+      if (i + 1 < lines.length && /^(?:Språkvägen\s+)?(?:s\.|sidorna|sid)\s*\d+/i.test(lines[i + 1].trim())) {
         pageRef = lines[i + 1].trim();
         i++;
-      } else if (i + 2 < lines.length && /^(?:Språkvägen\s+)?(?:s\.|sidorna)\s*\d+/i.test(lines[i + 2].trim())) {
+      } else if (i + 2 < lines.length && /^(?:Språkvägen\s+)?(?:s\.|sidorna|sid)\s*\d+/i.test(lines[i + 2].trim())) {
         pageRef = lines[i + 2].trim();
       }
 
@@ -72,9 +79,9 @@ export function parseWorkbookTextToNodes(rawText: string): LessonNode[] {
       }
     }
 
-    // 3. Word bank box: e.g. [och | så | men | för] or single line with box of words
-    if (/^\[.+\]$/.test(line) && line.includes('|')) {
-      const words = line.slice(1, -1).split('|').map(w => w.trim()).filter(Boolean);
+    // 3. Word bank box: e.g. [och | så | men | för] or "och så men för" inside a box line
+    if (/^\[.+\]$/.test(line) && (line.includes('|') || line.includes(' '))) {
+      const words = line.slice(1, -1).split(/[|·]/).map(w => w.trim()).filter(Boolean);
       nodes.push({
         tag: 'div',
         children: words.map(w => ({
@@ -86,7 +93,7 @@ export function parseWorkbookTextToNodes(rawText: string): LessonNode[] {
       continue;
     }
 
-    // 4. Example box: "Exempel: ..."
+    // 4. Example callout box: "Exempel: ..."
     if (/^Exempel\s*:/i.test(line)) {
       const exampleLines = [line];
       i++;
@@ -105,7 +112,7 @@ export function parseWorkbookTextToNodes(rawText: string): LessonNode[] {
     }
 
     // 5. Section titles: e.g. "E Substantiv", "A Ordföljd – huvudsats", "B Konjunktioner", "HÖRA", "Ordlista"
-    if (/^[A-Z]\s+[A-ZÅÄÖa-zåäö\s–—-]+$/.test(line) || /^(?:HÖRA|Hörförståelse|Ordlista|Grammatik)$/i.test(line)) {
+    if (/^[A-Z]\s+[A-ZÅÄÖa-zåäö\s–—-]+$/.test(line) || /^(?:HÖRA|Hörförståelse|Ordlista|Grammatik|Rak ordföljd)$/i.test(line)) {
       nodes.push({
         tag: 'h2',
         children: [{ tag: '#text', text: line }]
@@ -114,8 +121,19 @@ export function parseWorkbookTextToNodes(rawText: string): LessonNode[] {
       continue;
     }
 
-    // 6. Numbered Gap / Blank exercises: e.g. "1 [en gräns|en gräns] flera gränser" or "1 ... ____ ..."
-    if (/^\d+[\s.)]/.test(line) && (line.includes('___') || line.includes('…') || line.includes('/') || line.includes('[blank]') || /\[[^\]|]+\|[^\]]+\]/.test(line))) {
+    // 6. Numbered Gap / Blank exercises: e.g.
+    // "1 heter/Berlin/Tysklands huvudstad ____"
+    // "1 Människor kunde passera fritt... ____ det gick inte..."
+    // "1 skriv i singular... flera gränser"
+    const isGapLine = /^\d+[\s.)]/.test(line) && (
+      line.includes('____') ||
+      line.includes('/') ||
+      line.includes('[blank]') ||
+      /\[[^\]|]+\|[^\]]+\]/.test(line) ||
+      /\s{3,}/.test(line) // multiple spaces indicating a gap
+    );
+
+    if (isGapLine) {
       const gapLines: string[] = [];
       let prompt = '';
       if (nodes.length > 0 && nodes[nodes.length - 1].tag === 'p') {
@@ -126,9 +144,21 @@ export function parseWorkbookTextToNodes(rawText: string): LessonNode[] {
       while (i < lines.length) {
         const cur = lines[i].trim();
         if (/^\d+[\s.)]/.test(cur)) {
-          gapLines.push(cur);
+          // Normalize blanks in this line
+          let normalizedLine = cur;
+          if (!normalizedLine.includes('____') && !normalizedLine.includes('[blank]') && !/\[[^\]|]+\|[^\]]+\]/.test(normalizedLine)) {
+            // If it has slashes (like word order exercise: 1 heter/Berlin/Tysklands huvudstad)
+            if (normalizedLine.includes('/')) {
+              normalizedLine += ' ____';
+            } else if (/\s{3,}/.test(normalizedLine)) {
+              normalizedLine = normalizedLine.replace(/\s{3,}/g, ' ____ ');
+            } else {
+              normalizedLine += ' ____';
+            }
+          }
+          gapLines.push(normalizedLine);
           i++;
-        } else if (gapLines.length > 0 && cur && !/^[A-Z]\s+/.test(cur) && !cur.startsWith('Kapitel') && !cur.startsWith('Exempel:')) {
+        } else if (gapLines.length > 0 && cur && !/^[A-Z]\s+/.test(cur) && !cur.startsWith('Kapitel') && !cur.startsWith('Exempel:') && !/^(?:HÖRA|Grammatik|Ordlista)/i.test(cur)) {
           gapLines[gapLines.length - 1] += ' ' + cur;
           i++;
         } else {
@@ -151,15 +181,15 @@ export function parseWorkbookTextToNodes(rawText: string): LessonNode[] {
       }
     }
 
-    // 7. Choice / Checkbox exercises: e.g. "1 Varför är kvinnan irriterad?" followed by options
+    // 7. Choice / Checkbox exercises: e.g. "1 Varför är kvinnan irriterad?" followed by options [ ]
     if (/^\d+[\s.)]/.test(line)) {
       const qPrompt = line;
       i++;
       const opts: string[] = [];
       while (i < lines.length) {
         const cur = lines[i].trim();
-        if (/^(?:\[\s*\]|\(\s*\)|[a-d]\)|\-|\*)\s*(.+)/i.test(cur)) {
-          const optText = cur.replace(/^(?:\[\s*\]|\(\s*\)|[a-d]\)|\-|\*)\s*/i, '').trim();
+        if (/^(?:\[\s*\]|\(\s*\)|[a-d]\)|\-|\*|•|□)\s*(.+)/i.test(cur)) {
+          const optText = cur.replace(/^(?:\[\s*\]|\(\s*\)|[a-d]\)|\-|\*|•|□)\s*/i, '').trim();
           opts.push(optText);
           i++;
         } else if (opts.length > 0 && cur && !/^\d+[\s.)]/.test(cur)) {
