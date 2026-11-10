@@ -1,11 +1,14 @@
 import { storeDemoFile, type LessonFile, validLessonFile } from "./lesson-files";
 import { loadPdfReader, readPdfText, readImageText, assetUrl, PDF_IMPORT_VERSION } from "./pdf-import";
+import { parseRawTextToAiWorkbook, convertAiJsonToLessonNodes } from "./ai-pdf-parser";
+import { encodeLesson } from "./lesson-format";
 
 export type CollectedMaterial = {
   name: string;
   attachment: LessonFile;
   text?: string;
   warning?: string;
+  isAiJson?: boolean;
 };
 
 export async function uploadMaterial(file: File, demo: boolean): Promise<LessonFile> {
@@ -25,7 +28,7 @@ export async function uploadMaterial(file: File, demo: boolean): Promise<LessonF
   return data.file;
 }
 
-export async function extractMaterialText(file: File, onProgress: (message: string) => void = () => {}): Promise<string | null> {
+export async function extractMaterialText(file: File, onProgress: (message: string) => void = () => {}, isAiMode = false): Promise<string | null> {
   const ext = file.name.split(".").pop()?.toLowerCase() || "";
   const header = new TextDecoder().decode(await file.slice(0, 5).arrayBuffer());
   let text: string;
@@ -33,17 +36,17 @@ export async function extractMaterialText(file: File, onProgress: (message: stri
   const isImage = file.type.startsWith("image/") || ["png", "jpg", "jpeg", "webp", "gif", "bmp", "tiff", "tif"].includes(ext);
 
   if (ext === "pdf" || file.type === "application/pdf" || header === "%PDF-") {
-    onProgress("Läser PDF…");
+    onProgress(isAiMode ? "AI-analyserar PDF-struktur & övningar…" : "Läser PDF…");
     const reader = await loadPdfReader();
     reader.GlobalWorkerOptions.workerSrc = assetUrl("/pdf-worker-" + PDF_IMPORT_VERSION + ".mjs");
     text = await readPdfText(
       new Uint8Array(await file.arrayBuffer()),
       reader,
-      (page, total) => onProgress(`Läser PDF · sida ${page} av ${total}`),
+      (page, total) => onProgress(isAiMode ? `AI-tolkar PDF · sida ${page} av ${total}` : `Läser PDF · sida ${page} av ${total}`),
       { onOcrProgress: onProgress }
     );
   } else if (isImage) {
-    onProgress("Texttolkar bild med OCR · svenska och engelska…");
+    onProgress(isAiMode ? "AI/OCR-tolkar bild till interaktiv grammatikövning…" : "Texttolkar bild med OCR · svenska och engelska…");
     text = await readImageText(file, onProgress);
   } else if (ext === "docx" || file.type === "application/vnd.openxmlformats-officedocument.wordprocessingml.document") {
     onProgress("Läser Word-dokument…");
@@ -57,7 +60,6 @@ export async function extractMaterialText(file: File, onProgress: (message: stri
     const rawHtml = await file.text();
     const doc = new DOMParser().parseFromString(rawHtml, "text/html");
 
-    // Replace interactive inputs with workbook format [placeholder|facit] or ____
     const inputs = doc.querySelectorAll("input");
     inputs.forEach(input => {
       const answer = input.getAttribute("data-answer") || input.placeholder || "";
@@ -74,16 +76,23 @@ export async function extractMaterialText(file: File, onProgress: (message: stri
 
   text = text.normalize("NFC").replace(/\r\n?/g, "\n").replace(/\n{4,}/g, "\n\n").trim();
   if (!text) throw Error("Ingen läsbar text hittades i filen.");
+
+  if (isAiMode) {
+    onProgress("AI strukturerar till exakt grammatik-JSON…");
+    const aiData = parseRawTextToAiWorkbook(text);
+    return JSON.stringify(aiData);
+  }
+
   if (text.length > 150000) throw Error("Texten är för lång för en lektion. Dela upp materialet.");
   return text;
 }
 
-export async function collectMaterial(file: File, demo: boolean, onProgress: (message: string) => void): Promise<CollectedMaterial> {
-  onProgress("Laddar upp originalfil…");
+export async function collectMaterial(file: File, demo: boolean, onProgress: (message: string) => void, isAiMode = false): Promise<CollectedMaterial> {
+  onProgress(isAiMode ? "Laddar upp PDF för AI-inläsning…" : "Laddar upp originalfil…");
   const attachment = await uploadMaterial(file, demo);
   try {
-    const text = await extractMaterialText(file, onProgress);
-    return { name: file.name, attachment, ...(text ? { text } : {}) };
+    const text = await extractMaterialText(file, onProgress, isAiMode);
+    return { name: file.name, attachment, ...(text ? { text } : {}), isAiJson: isAiMode };
   } catch (error) {
     return {
       name: file.name,

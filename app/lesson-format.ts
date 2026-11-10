@@ -1,5 +1,6 @@
 import {validLessonFile,type LessonFile} from './lesson-files';
 import {parseWorkbookTextToNodes} from './workbook-parser';
+import {convertAiJsonToLessonNodes,parseRawTextToAiWorkbook} from './ai-pdf-parser';
 
 // A small, validated document format. Raw imported HTML is never rendered.
 export const RICH_PREFIX='LARVY_LESSON_V1:';
@@ -236,14 +237,22 @@ export function hasLessonContent(body:string){
 }
 
 export function appendLessonText(body: string, text: string) {
-  // If text contains workbook patterns (blanks '____', tables '|', checkboxes '[ ]', chapters), parse into interactive workbook nodes!
-  const hasWorkbookPatterns = /Kapitel\s+\d+|Språkvägen|____|\[\s*\]|\|\s*[^|]+\s*\|/i.test(text);
-  const newNodes: LessonNode[] = hasWorkbookPatterns
-    ? parseWorkbookTextToNodes(text)
-    : (text.split(/\r?\n\s*\r?\n/).map(p => p.trim()).filter(Boolean)).map(p => ({
-        tag: "p" as const,
-        children: [{ tag: "#text" as const, text: p }]
-      }));
+  // If text is JSON from AI or starts with { "exercises": ... }
+  let newNodes: LessonNode[];
+  const trimmed = text.trim();
+  if (trimmed.startsWith('{') && trimmed.includes('"exercises"') || trimmed.startsWith('```json')) {
+    const aiData = parseRawTextToAiWorkbook(trimmed);
+    newNodes = convertAiJsonToLessonNodes(aiData);
+  } else {
+    // If text contains workbook patterns (blanks '____', tables '|', checkboxes '[ ]', chapters), parse into interactive workbook nodes!
+    const hasWorkbookPatterns = /Kapitel\s+\d+|Språkvägen|____|\[\s*\]|\|\s*[^|]+\s*\|/i.test(text);
+    newNodes = hasWorkbookPatterns
+      ? parseWorkbookTextToNodes(text)
+      : (text.split(/\r?\n\s*\r?\n/).map(p => p.trim()).filter(Boolean)).map(p => ({
+          tag: "p" as const,
+          children: [{ tag: "#text" as const, text: p }]
+        }));
+  }
 
   const existing = parseLesson(body);
   if (existing) {
