@@ -1,6 +1,6 @@
 import {validAnswers,isInteractiveMaterial,materialLessonBody,validateLesson,hasLessonContent,stripAnswerKey,gradeLesson} from './lesson-format';
 // Isolated, device-local teacher demonstration. Never accesses production APIs.
-const KEY='larvy-teacher-demo-v1';
+const KEY='larvy-teacher-demo-v2';
 const isSubmitted=(status:string)=>['Inlämnad','Godkänd','Ej godkänd'].includes(status);
 function seedData(){
  const now=new Date().toISOString();
@@ -48,12 +48,29 @@ function seedData(){
     {tag:'exercise',exercise:{id:'q-exam-3',type:'text',prompt:'Ge ett exempel på en näringskedja i en svensk skog.',options:[]}},
    ]),
   },
+  {
+   id:'m-3',
+   kind:'Lektion',
+   title:'Språkvägen C1 – Kapitel 5 Berlinmuren (Grammatik)',
+   publishedAt:now,
+   body:'LARVY_LESSON_V1:'+JSON.stringify([
+    {tag:'div',children:[{tag:'div',children:[{tag:'span',children:[{tag:'#text',text:'Kapitel 5 – Berlinmuren'}]},{tag:'span',children:[{tag:'#text',text:'Språkvägen s. 184–186'}]}]}]},
+    {tag:'h2',children:[{tag:'#text',text:'E Substantiv'}]},
+    {tag:'p',children:[{tag:'#text',text:'Skriv substantiven i singular eller plural.'}]},
+    {tag:'exercise',exercise:{id:'q-substantiv-singular-plural',type:'gap',prompt:'Skriv substantiven i singular eller plural:',options:['1. flera gränser ____','2. flera somrar ____','3. en dag ____','4. flera murar ____','5. flera huvudstäder ____'],correctOptions:['en gräns','en sommar','flera dagar','en mur','en huvudstad']}},
+    {tag:'h2',children:[{tag:'#text',text:'Bestämd eller obestämd form'}]},
+    {tag:'p',children:[{tag:'#text',text:'Skriv substantiven i bestämd eller obestämd form.'}]},
+    {tag:'exercise',exercise:{id:'q-substantiv-bestamd-obestamd',type:'gap',prompt:'Fyll i rätt form av substantiven:',options:['6. (ett krig) Efter ____ delade man Tyskland i två delar.','7. (en gräns) ____ mellan Öst- och Västberlin var öppen före 1961.','8. (en sommar) Under ____ 1961 flydde tusentals människor.','9. (en dag) Ibland flydde 5 000 människor under ____ ...','10. (en mur) 1961 byggdes en ____ runt Västberlin.'],correctOptions:['kriget','Gränsen','sommaren','en enda dag','mur']}}
+   ]),
+  },
  ];
  const plans=[
   {id:'p-1',studentId:'s-1',materialId:'m-1',due:'2026-11-20',status:'Inlämnad',grade:'',comment:'Självrättning: 1 av 1 rätt på flervalsfrågor.',answers:JSON.stringify({'q-lesson-1':['Solljus','Vatten','Koldioxid'],'q-lesson-2':'För att växterna producerar syre som vi andas och mat till djur och människor.'}),updated:now},
   {id:'p-2',studentId:'s-1',materialId:'m-2',due:'2026-11-25',status:'Ej påbörjad',grade:'',comment:'',answers:'{}',updated:now},
-  {id:'p-3',studentId:'s-2',materialId:'m-1',due:'2026-11-20',status:'Ej påbörjad',grade:'',comment:'',answers:'{}',updated:now},
-  {id:'p-4',studentId:'s-4',materialId:'m-2',due:'2026-11-25',status:'Inlämnad',grade:'',comment:'Självrättning: 2 av 2 rätt på flervalsfrågor.',answers:JSON.stringify({'q-exam-1':['Syre'],'q-exam-2':['I kloroplasterna'],'q-exam-3':'Blåbärsris -> Skogsmus -> Räv'}),updated:now},
+  {id:'p-3',studentId:'s-1',materialId:'m-3',due:'2026-11-28',status:'Ej påbörjad',grade:'',comment:'',answers:'{}',updated:now},
+  {id:'p-4',studentId:'s-2',materialId:'m-3',due:'2026-11-28',status:'Ej påbörjad',grade:'',comment:'',answers:'{}',updated:now},
+  {id:'p-5',studentId:'s-2',materialId:'m-1',due:'2026-11-20',status:'Ej påbörjad',grade:'',comment:'',answers:'{}',updated:now},
+  {id:'p-6',studentId:'s-4',materialId:'m-2',due:'2026-11-25',status:'Inlämnad',grade:'',comment:'Självrättning: 2 av 2 rätt på flervalsfrågor.',answers:JSON.stringify({'q-exam-1':['Syre'],'q-exam-2':['I kloroplasterna'],'q-exam-3':'Blåbärsris -> Skogsmus -> Räv'}),updated:now},
  ];
  return {students,materials,plans,invitations,drafts:[]};
 }
