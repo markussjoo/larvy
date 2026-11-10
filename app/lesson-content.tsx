@@ -25,27 +25,28 @@ export default function LessonContent({
       const v = answers[q.id];
       const isGraded = showGrading || !!localChecked[q.id];
 
-      // 1. GAP / FILL-IN-THE-BLANK EXERCISE (PDF Worksheets 1, 2, 4)
+      // 1. GAP / FILL-IN-THE-BLANK EXERCISE (PDF Worksheets 1, 2, 4 & HTML Template)
       if (q.type === 'gap') {
         const rowAnswers: string[] = Array.isArray(v) ? (v as string[]) : [];
         const hasFacit = q.correctOptions && q.correctOptions.some(opt => !!opt.trim());
+
+        let correctCount = 0;
+        let totalCount = 0;
+
+        if (hasFacit) {
+          q.correctOptions!.forEach((exp, idx) => {
+            if (!exp.trim()) return;
+            totalCount++;
+            const userAns = (rowAnswers[idx] || '').trim().toLowerCase();
+            const accepted = exp.split(/[|/]/).map(s => s.trim().toLowerCase()).filter(Boolean);
+            if (accepted.includes(userAns)) correctCount++;
+          });
+        }
 
         return (
           <fieldset className="lesson-exercise workbook-exercise" key={key}>
             <legend className="workbook-legend">
               <span className="workbook-legend-prompt">{q.prompt}</span>
-              {isGraded && hasFacit && (
-                <span className="badge workbook-badge-grading">
-                  {q.correctOptions!.every((exp, idx) => {
-                    if (!exp.trim()) return true;
-                    const ans = (rowAnswers[idx] || '').trim().toLowerCase();
-                    const accepted = exp.split(/[|/]/).map(s => s.trim().toLowerCase());
-                    return accepted.includes(ans);
-                  })
-                    ? '✓ Alla rätt'
-                    : 'Kontrollerad'}
-                </span>
-              )}
             </legend>
 
             <div className="workbook-gap-list">
@@ -53,14 +54,21 @@ export default function LessonContent({
                 const userVal = rowAnswers[rowIdx] || '';
                 const expected = q.correctOptions?.[rowIdx] || '';
                 const acceptedVariants = expected.split(/[|/]/).map(s => s.trim().toLowerCase()).filter(Boolean);
-                const isCorrect = acceptedVariants.length > 0 && acceptedVariants.includes(userVal.trim().toLowerCase());
-                const isIncorrect = isGraded && acceptedVariants.length > 0 && userVal.trim() && !isCorrect;
+                const isCorrect = isGraded && acceptedVariants.length > 0 && acceptedVariants.includes(userVal.trim().toLowerCase());
+                const isIncorrect = isGraded && acceptedVariants.length > 0 && (!userVal.trim() || !acceptedVariants.includes(userVal.trim().toLowerCase()));
 
-                // Split line into parts if it contains blanks '____' or '...'
-                // E.g. "1 heter/Berlin/Tysklands huvudstad ____"
-                // or "1 Människor kunde passera ... ____ det gick inte ..."
-                const parts = line.split(/(?:_{3,}|\[blank\]|\.{3,})/);
+                // Clean line of facit marker if present: e.g. "1 [en gräns|facit] flera gränser"
+                const displayLine = line.replace(/\[([^\]|]+)\|([^\]]+)\]/g, '____');
+
+                // Split line into parts if it contains blanks '____', '...' or '[blank]'
+                const parts = displayLine.split(/(?:_{2,}|\[blank\]|\.{3,})/);
                 const hasInlineBlank = parts.length > 1;
+
+                // Detect prompt number (e.g. "1", "2", "3")
+                const numMatch = displayLine.match(/^(\d+)[\s.)]\s*(.*)$/);
+                const rowNum = numMatch ? numMatch[1] : '';
+                const restOfLine = numMatch ? numMatch[2] : displayLine;
+                const restParts = hasInlineBlank ? restOfLine.split(/(?:_{2,}|\[blank\]|\.{3,})/) : [restOfLine];
 
                 const updateAnswer = (newVal: string) => {
                   const nextAnswers = [...rowAnswers];
@@ -71,39 +79,42 @@ export default function LessonContent({
 
                 return (
                   <div key={rowIdx} className={`workbook-gap-row ${isCorrect ? 'is-correct' : ''} ${isIncorrect ? 'is-wrong' : ''}`}>
-                    {hasInlineBlank ? (
-                      <div className="workbook-gap-inline">
-                        <span>{parts[0]}</span>
-                        <input
-                          type="text"
-                          className={`workbook-input ${isCorrect ? 'correct' : ''} ${isIncorrect ? 'wrong' : ''}`}
-                          value={userVal}
-                          disabled={!onAnswer || readOnly}
-                          placeholder="skriv här…"
-                          onChange={e => updateAnswer(e.target.value)}
-                        />
-                        <span>{parts.slice(1).join('')}</span>
-                      </div>
-                    ) : (
-                      <div className="workbook-gap-stacked">
-                        <div className="workbook-gap-prompt-line">{line}</div>
-                        <input
-                          type="text"
-                          className={`workbook-input full-width ${isCorrect ? 'correct' : ''} ${isIncorrect ? 'wrong' : ''}`}
-                          value={userVal}
-                          disabled={!onAnswer || readOnly}
-                          placeholder="Skriv meningen här…"
-                          onChange={e => updateAnswer(e.target.value)}
-                        />
-                      </div>
-                    )}
+                    <div className="workbook-row-content">
+                      {rowNum && <span className="workbook-row-num">{rowNum}</span>}
+                      {hasInlineBlank ? (
+                        <div className="workbook-gap-inline textbook-font">
+                          {restParts[0] && <span>{restParts[0]}</span>}
+                          <input
+                            type="text"
+                            className={`fill-input workbook-input ${isCorrect ? 'correct' : ''} ${isIncorrect ? 'incorrect' : ''}`}
+                            value={userVal}
+                            disabled={!onAnswer || readOnly}
+                            placeholder="skriv här…"
+                            onChange={e => updateAnswer(e.target.value)}
+                          />
+                          {restParts.slice(1).join('') && <span>{restParts.slice(1).join('')}</span>}
+                        </div>
+                      ) : (
+                        <div className="workbook-gap-stacked">
+                          <div className="workbook-gap-prompt-line textbook-font">{restOfLine}</div>
+                          <input
+                            type="text"
+                            className={`fill-input workbook-input full-width ${isCorrect ? 'correct' : ''} ${isIncorrect ? 'incorrect' : ''}`}
+                            value={userVal}
+                            disabled={!onAnswer || readOnly}
+                            placeholder="Skriv svaret här…"
+                            onChange={e => updateAnswer(e.target.value)}
+                          />
+                        </div>
+                      )}
+                    </div>
 
                     {isGraded && acceptedVariants.length > 0 && (
                       <div className="workbook-feedback">
                         {isCorrect ? (
-                          <span className="badge" style={{ background: '#275c49', color: '#fff' }}>✓ Rätt</span>
+                          <span className="badge badge-success">✓ Rätt</span>
                         ) : (
-                          <span className="badge" style={{ background: '#a33232', color: '#fff' }}>
+                          <span className="badge badge-danger">
                             Facit: {expected}
                           </span>
                         )}
@@ -114,22 +125,38 @@ export default function LessonContent({
               })}
             </div>
 
-            {!readOnly && onAnswer && hasFacit && (
+            {/* Dynamic feedback message (matching HTML sample) */}
+            {isGraded && hasFacit && totalCount > 0 && (
+              <div className="workbook-feedback-banner">
+                {correctCount === totalCount ? (
+                  <span className="feedback-success">🎉 Utmärkt! Alla {totalCount} svar är helt korrekta!</span>
+                ) : (
+                  <span className="feedback-warning">Du har {correctCount} av {totalCount} rätt. Kontrollera de rödmarkerade fälten.</span>
+                )}
+              </div>
+            )}
+
+            {!readOnly && onAnswer && (
               <div className="workbook-actions">
                 <button
                   type="button"
-                  className="light"
-                  onClick={() => setLocalChecked(prev => ({ ...prev, [q.id]: !prev[q.id] }))}
-                >
-                  {localChecked[q.id] ? 'Dölj rättning' : 'Kontrollera svar'}
-                </button>
-                <button
-                  type="button"
-                  className="light"
-                  onClick={() => onAnswer(q.id, q.options.map(() => ''))}
+                  className="reset-btn"
+                  onClick={() => {
+                    onAnswer(q.id, q.options.map(() => ''));
+                    setLocalChecked(prev => ({ ...prev, [q.id]: false }));
+                  }}
                 >
                   Rensa fält
                 </button>
+                {hasFacit && (
+                  <button
+                    type="button"
+                    className="check-btn"
+                    onClick={() => setLocalChecked(prev => ({ ...prev, [q.id]: !prev[q.id] }))}
+                  >
+                    {localChecked[q.id] ? 'Dölj rättning' : 'Kontrollera svar'}
+                  </button>
+                )}
               </div>
             )}
           </fieldset>
@@ -173,14 +200,15 @@ export default function LessonContent({
                         const cellVal = cellAnswers[cellIdx] || '';
                         const expected = q.correctOptions?.[cellIdx] || '';
                         const accepted = expected.split(/[|/]/).map(s => s.trim().toLowerCase()).filter(Boolean);
-                        const isCorrect = accepted.length > 0 && accepted.includes(cellVal.trim().toLowerCase());
+                        const isCorrect = isGraded && accepted.length > 0 && accepted.includes(cellVal.trim().toLowerCase());
+                        const isIncorrect = isGraded && accepted.length > 0 && (!cellVal.trim() || !accepted.includes(cellVal.trim().toLowerCase()));
 
                         return (
                           <td key={cIdx}>
                             {isEditable ? (
                               <input
                                 type="text"
-                                className={`workbook-table-input ${isCorrect ? 'correct' : ''}`}
+                                className={`workbook-table-input ${isCorrect ? 'correct' : ''} ${isIncorrect ? 'incorrect' : ''}`}
                                 value={cellVal}
                                 disabled={!onAnswer || readOnly}
                                 placeholder="skriv…"
@@ -198,15 +226,28 @@ export default function LessonContent({
               </table>
             </div>
 
-            {!readOnly && onAnswer && hasFacit && (
+            {!readOnly && onAnswer && (
               <div className="workbook-actions">
                 <button
                   type="button"
-                  className="light"
-                  onClick={() => setLocalChecked(prev => ({ ...prev, [q.id]: !prev[q.id] }))}
+                  className="reset-btn"
+                  onClick={() => {
+                    const emptyCells = table.rows.flatMap(r => r.cells.map(() => ''));
+                    onAnswer(q.id, emptyCells);
+                    setLocalChecked(prev => ({ ...prev, [q.id]: false }));
+                  }}
                 >
-                  {localChecked[q.id] ? 'Dölj rättning' : 'Kontrollera svar'}
+                  Rensa fält
                 </button>
+                {hasFacit && (
+                  <button
+                    type="button"
+                    className="check-btn"
+                    onClick={() => setLocalChecked(prev => ({ ...prev, [q.id]: !prev[q.id] }))}
+                  >
+                    {localChecked[q.id] ? 'Dölj rättning' : 'Kontrollera svar'}
+                  </button>
+                )}
               </div>
             )}
           </fieldset>
@@ -221,10 +262,10 @@ export default function LessonContent({
 
         return (
           <fieldset className="lesson-exercise workbook-choice-box" key={key}>
-            <legend>
-              {q.prompt}
+            <legend className="workbook-legend">
+              <span className="workbook-legend-prompt">{q.prompt}</span>
               {hasKey && (
-                <span className="badge" style={{ marginLeft: 8, background: isCorrect ? '#275c49' : '#a33232', color: '#fff' }}>
+                <span className="badge" style={{ marginLeft: 8, background: isCorrect ? '#16a34a' : '#dc2626', color: '#fff' }}>
                   {isCorrect ? '✓ Rätt' : '✗ Fel'}
                 </span>
               )}
@@ -247,12 +288,12 @@ export default function LessonContent({
                     <span>
                       {option}
                       {hasKey && isExpected && (
-                        <span className="badge" style={{ marginLeft: 8, background: '#2d5c40', color: '#fff' }}>
+                        <span className="badge" style={{ marginLeft: 8, background: '#15803d', color: '#fff' }}>
                           Rätt svar
                         </span>
                       )}
                       {hasKey && checked && !isExpected && (
-                        <span className="badge" style={{ marginLeft: 8, background: '#a33232', color: '#fff' }}>
+                        <span className="badge" style={{ marginLeft: 8, background: '#dc2626', color: '#fff' }}>
                           Ditt val
                         </span>
                       )}
@@ -261,15 +302,27 @@ export default function LessonContent({
                 );
               })}
             </div>
-            {!readOnly && onAnswer && q.correctOptions && q.correctOptions.length > 0 && (
+            {!readOnly && onAnswer && (
               <div className="workbook-actions">
                 <button
                   type="button"
-                  className="light"
-                  onClick={() => setLocalChecked(prev => ({ ...prev, [q.id]: !prev[q.id] }))}
+                  className="reset-btn"
+                  onClick={() => {
+                    onAnswer(q.id, []);
+                    setLocalChecked(prev => ({ ...prev, [q.id]: false }));
+                  }}
                 >
-                  {localChecked[q.id] ? 'Dölj facit' : 'Kontrollera svar'}
+                  Rensa val
                 </button>
+                {q.correctOptions && q.correctOptions.length > 0 && (
+                  <button
+                    type="button"
+                    className="check-btn"
+                    onClick={() => setLocalChecked(prev => ({ ...prev, [q.id]: !prev[q.id] }))}
+                  >
+                    {localChecked[q.id] ? 'Dölj facit' : 'Kontrollera svar'}
+                  </button>
+                )}
               </div>
             )}
           </fieldset>

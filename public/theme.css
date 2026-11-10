@@ -1476,3 +1476,132 @@ html[data-theme="dark"] .workbook-option-item:hover {
   accent-color: #2563eb;
   cursor: pointer;
 }
+
+
+/* Textbook typography & inputs matching HTML template */
+.textbook-font {
+  font-family: 'Merriweather', Georgia, serif;
+}
+
+.fill-input {
+  border: none;
+  border-bottom: 2px solid #cbd5e1;
+  background-color: transparent;
+  padding: 2px 6px;
+  font-family: 'Merriweather', Georgia, serif;
+  color: #1e293b;
+  transition: all 0.2s ease;
+  outline: none;
+  text-align: center;
+}
+
+html[data-theme="dark"] .fill-input {
+  border-bottom-color: #475569;
+  color: #f1f5f9;
+}
+
+.fill-input:focus {
+  border-bottom-color: #2563eb !important;
+  background-color: rgba(37, 99, 235, 0.05);
+}
+
+.fill-input.correct {
+  border-bottom-color: #16a34a !important;
+  color: #15803d !important;
+  background-color: rgba(22, 163, 74, 0.08) !important;
+}
+
+.fill-input.incorrect {
+  border-bottom-color: #dc2626 !important;
+  color: #b91c1c !important;
+  background-color: rgba(220, 38, 38, 0.08) !important;
+}
+
+.workbook-row-content {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+}
+
+.workbook-row-num {
+  font-weight: 700;
+  color: #94a3b8;
+  width: 24px;
+  text-align: right;
+  flex-shrink: 0;
+  font-family: inherit;
+}
+
+.workbook-feedback-banner {
+  padding: 12px 18px;
+  border-radius: 10px;
+  margin-top: 18px;
+  font-size: 14px;
+  font-weight: 600;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+}
+
+html[data-theme="dark"] .workbook-feedback-banner {
+  background: #1e293b;
+  border-color: #334155;
+}
+
+.feedback-success {
+  color: #15803d;
+}
+
+.feedback-warning {
+  color: #b45309;
+}
+
+.badge-success {
+  background: #16a34a;
+  color: #ffffff;
+}
+
+.badge-danger {
+  background: #dc2626;
+  color: #ffffff;
+}
+
+.reset-btn {
+  padding: 9px 18px;
+  border-radius: 10px;
+  border: 1px solid #cbd5e1;
+  background: #ffffff;
+  color: #334155;
+  font-weight: 600;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.reset-btn:hover {
+  background: #f1f5f9;
+  border-color: #94a3b8;
+}
+
+html[data-theme="dark"] .reset-btn {
+  background: #1e293b;
+  border-color: #334155;
+  color: #e2e8f0;
+}
+
+.check-btn {
+  padding: 9px 20px;
+  border-radius: 10px;
+  background: #0284c7;
+  color: #ffffff;
+  font-weight: 600;
+  font-size: 13px;
+  border: none;
+  cursor: pointer;
+  box-shadow: 0 4px 12px rgba(2, 132, 199, 0.25);
+  transition: all 0.15s ease;
+}
+
+.check-btn:hover {
+  background: #0369a1;
+  transform: translateY(-1px);
+}

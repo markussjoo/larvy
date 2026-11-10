@@ -1,12 +1,12 @@
 import type { LessonNode, Exercise } from './lesson-format';
 
 /**
- * Parses raw text (e.g. from OCR or file import) and detects workbook patterns:
- * 1. Workbook top banners (e.g. "Kapitel 5 – Berlinmuren", "Språkvägen s. 191")
- * 2. Section headers ("A Ordföljd – huvudsats", "B Konjunktioner", "HÖRA", "Ordlista")
+ * Parses raw text or imported workbook HTML/text and detects:
+ * 1. Workbook top banners (e.g. "Kapitel 5 – Berlinmuren", "Språkvägen s. 184–186")
+ * 2. Section headers ("E Substantiv", "A Ordföljd – huvudsats", "B Konjunktioner", "HÖRA")
  * 3. Word bank boxes ("[och | så | men | för]" or "Välj bland orden i rutan...")
  * 4. Example callouts ("Exempel: ...")
- * 5. Fill-in-the-blank / Gap lines ("1 heter/Berlin/... ____")
+ * 5. Fill-in-the-blank / Gap lines ("1 en gräns ____ flera gränser" or embedded "[ans|facit]")
  * 6. Choice / Checkbox lists ("1 Varför... [ ] ...")
  * 7. Vocabulary tables ("Ord | Översättning | Uttal | Skriv")
  */
@@ -26,12 +26,11 @@ export function parseWorkbookTextToNodes(rawText: string): LessonNode[] {
     // 1. Check for Workbook header / banner (e.g., "Kapitel 5 – Berlinmuren")
     const chapterMatch = line.match(/^Kapitel\s+\d+[\s–—-]+(.+)$/i);
     if (chapterMatch) {
-      // Look ahead for page reference like "Språkvägen s. 191" or "s. 191"
       let pageRef = '';
-      if (i + 1 < lines.length && /^(?:Språkvägen\s+)?s\.\s*\d+/i.test(lines[i + 1].trim())) {
+      if (i + 1 < lines.length && /^(?:Språkvägen\s+)?(?:s\.|sidorna)\s*\d+/i.test(lines[i + 1].trim())) {
         pageRef = lines[i + 1].trim();
         i++;
-      } else if (i + 2 < lines.length && /^(?:Språkvägen\s+)?s\.\s*\d+/i.test(lines[i + 2].trim())) {
+      } else if (i + 2 < lines.length && /^(?:Språkvägen\s+)?(?:s\.|sidorna)\s*\d+/i.test(lines[i + 2].trim())) {
         pageRef = lines[i + 2].trim();
       }
 
@@ -91,7 +90,7 @@ export function parseWorkbookTextToNodes(rawText: string): LessonNode[] {
     if (/^Exempel\s*:/i.test(line)) {
       const exampleLines = [line];
       i++;
-      while (i < lines.length && lines[i].trim() && !/^\d+[\s.)]/.test(lines[i].trim()) && !lines[i].trim().startsWith('A ') && !lines[i].trim().startsWith('B ')) {
+      while (i < lines.length && lines[i].trim() && !/^\d+[\s.)]/.test(lines[i].trim()) && !/^[A-Z]\s+[A-ZÅÄÖa-zåäö]/.test(lines[i].trim())) {
         exampleLines.push(lines[i].trim());
         i++;
       }
@@ -105,7 +104,7 @@ export function parseWorkbookTextToNodes(rawText: string): LessonNode[] {
       continue;
     }
 
-    // 5. Section titles: e.g. "A Ordföljd – huvudsats", "B Konjunktioner", "HÖRA", "Ordlista"
+    // 5. Section titles: e.g. "E Substantiv", "A Ordföljd – huvudsats", "B Konjunktioner", "HÖRA", "Ordlista"
     if (/^[A-Z]\s+[A-ZÅÄÖa-zåäö\s–—-]+$/.test(line) || /^(?:HÖRA|Hörförståelse|Ordlista|Grammatik)$/i.test(line)) {
       nodes.push({
         tag: 'h2',
@@ -115,8 +114,8 @@ export function parseWorkbookTextToNodes(rawText: string): LessonNode[] {
       continue;
     }
 
-    // 6. Numbered Gap / Blank exercises: e.g. "1 heter/Berlin/... ____" or "1 ... ____ ..."
-    if (/^\d+[\s.)]/.test(line) && (line.includes('___') || line.includes('…') || line.includes('/') || line.includes('[blank]'))) {
+    // 6. Numbered Gap / Blank exercises: e.g. "1 [en gräns|en gräns] flera gränser" or "1 ... ____ ..."
+    if (/^\d+[\s.)]/.test(line) && (line.includes('___') || line.includes('…') || line.includes('/') || line.includes('[blank]') || /\[[^\]|]+\|[^\]]+\]/.test(line))) {
       const gapLines: string[] = [];
       let prompt = '';
       if (nodes.length > 0 && nodes[nodes.length - 1].tag === 'p') {
@@ -143,7 +142,7 @@ export function parseWorkbookTextToNodes(rawText: string): LessonNode[] {
           exercise: {
             id: 'gap-' + Math.random().toString(36).substring(2, 9),
             type: 'gap',
-            prompt: prompt || 'Fyll i rätt svar:',
+            prompt: prompt || 'Fyll i rätt svar på linjen:',
             options: gapLines,
             correctOptions: extractGapFacit(gapLines)
           }

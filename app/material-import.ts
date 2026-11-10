@@ -53,9 +53,21 @@ export async function extractMaterialText(file: File, onProgress: (message: stri
     onProgress("Läser text…");
     text = await file.text();
   } else if (ext === "html" || ext === "htm") {
-    const doc = new DOMParser().parseFromString(await file.text(), "text/html");
-    doc.querySelectorAll("script,style,nav,footer").forEach(n => n.remove());
-    text = doc.body.textContent || "";
+    onProgress("Tolkar interaktiv HTML och arbetsbok…");
+    const rawHtml = await file.text();
+    const doc = new DOMParser().parseFromString(rawHtml, "text/html");
+
+    // Replace interactive inputs with workbook format [placeholder|facit] or ____
+    const inputs = doc.querySelectorAll("input");
+    inputs.forEach(input => {
+      const answer = input.getAttribute("data-answer") || input.placeholder || "";
+      const replacementText = answer ? ` [${input.placeholder || "svar"}|${answer}] ` : " ____ ";
+      const textNode = doc.createTextNode(replacementText);
+      input.parentNode?.replaceChild(textNode, input);
+    });
+
+    doc.querySelectorAll("script,style,nav,footer,#check-btn,#reset-btn,#feedback-message").forEach(n => n.remove());
+    text = doc.body.innerText || doc.body.textContent || "";
   } else {
     return null;
   }
