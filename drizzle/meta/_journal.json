@@ -43,6 +43,13 @@
       "when": 1793957898459,
       "tag": "0005_gigantic_meteorite",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1794394229337,
+      "tag": "0006_slippery_azazel",
+      "breakpoints": true
     }
   ]
 }
