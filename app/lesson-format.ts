@@ -4,7 +4,7 @@ import {convertAiJsonToLessonNodes,parseRawTextToAiWorkbook} from './ai-pdf-pars
 
 // A small, validated document format. Raw imported HTML is never rendered.
 export const RICH_PREFIX='LARVY_LESSON_V1:';
-export const MAX_LESSON_BYTES=650000;
+export const MAX_LESSON_BYTES=2500000;
 
 export type TableData = {
   headers: string[];
@@ -82,6 +82,32 @@ export function validAnswers(body:string,a:any){
   });
 }
 
+/** Normalize answer text for robust, tolerant comparison */
+export function normalizeAnswerText(text: string): string {
+  return (text || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[.,/#!$%^&*;:{}=\-_`~()?]/g, '') // strip trailing/leading punctuation
+    .replace(/\s+/g, ' ');
+}
+
+export function matchesExpectedAnswer(userAnswer: string, expectedVariantsString: string): boolean {
+  const user = normalizeAnswerText(userAnswer);
+  if (!user) return false;
+  // Variants can be separated by |, /, or semicolon
+  const variants = expectedVariantsString
+    .split(/[|/;]/)
+    .map(v => normalizeAnswerText(v))
+    .filter(Boolean);
+  
+  if (variants.includes(user)) return true;
+  // Also support matching if the user wrote with or without Swedish leading articles (t.ex. "en mur" vs "mur")
+  return variants.some(v => {
+    const stripArticle = (s: string) => s.replace(/^(ett|en|den|det|de|flera)\s+/i, '').trim();
+    return stripArticle(v) === stripArticle(user);
+  });
+}
+
 export const isLesson=(kind:string)=>kind==='Lektion'||kind==='Uppgift';
 export const isInteractiveMaterial=(kind:string)=>isLesson(kind)||kind==='Prov';
 
@@ -109,21 +135,17 @@ export function gradeLesson(body:string,answers:Answers):AutoGradeResult{
       if(q.correctOptions&&q.correctOptions.some(opt=>!!opt.trim())){
         const given=Array.isArray(answers[q.id])?(answers[q.id] as string[]):[];
         const expected=q.correctOptions;
-        // Count each row with an expected answer
         expected.forEach((exp, idx) => {
           if (!exp.trim()) return;
           totalGradable++;
-          const userAns = (given[idx] || '').trim().toLowerCase().replace(/\s+/g, ' ');
-          // Allow multiple accepted variants separated by | or /
-          const acceptedVariants = exp.split(/[|/]/).map(s => s.trim().toLowerCase().replace(/\s+/g, ' '));
-          const isRowCorrect = acceptedVariants.includes(userAns);
+          const userAns = given[idx] || '';
+          const isRowCorrect = matchesExpectedAnswer(userAns, exp);
           if (isRowCorrect) correctCount++;
         });
         const isAllCorrect = expected.every((exp, idx) => {
           if (!exp.trim()) return true;
-          const userAns = (given[idx] || '').trim().toLowerCase().replace(/\s+/g, ' ');
-          const acceptedVariants = exp.split(/[|/]/).map(s => s.trim().toLowerCase().replace(/\s+/g, ' '));
-          return acceptedVariants.includes(userAns);
+          const userAns = given[idx] || '';
+          return matchesExpectedAnswer(userAns, exp);
         });
         details[q.id]={correct:isAllCorrect,expected,given};
       }
@@ -136,15 +158,13 @@ export function gradeLesson(body:string,answers:Answers):AutoGradeResult{
         expected.forEach((exp, idx) => {
           if (!exp.trim()) return;
           totalGradable++;
-          const userAns = (given[idx] || '').trim().toLowerCase().replace(/\s+/g, ' ');
-          const acceptedVariants = exp.split(/[|/]/).map(s => s.trim().toLowerCase().replace(/\s+/g, ' '));
-          if (acceptedVariants.includes(userAns)) correctCount++;
+          const userAns = given[idx] || '';
+          if (matchesExpectedAnswer(userAns, exp)) correctCount++;
         });
         const isAllCorrect = expected.every((exp, idx) => {
           if (!exp.trim()) return true;
-          const userAns = (given[idx] || '').trim().toLowerCase().replace(/\s+/g, ' ');
-          const acceptedVariants = exp.split(/[|/]/).map(s => s.trim().toLowerCase().replace(/\s+/g, ' '));
-          return acceptedVariants.includes(userAns);
+          const userAns = given[idx] || '';
+          return matchesExpectedAnswer(userAns, exp);
         });
         details[q.id]={correct:isAllCorrect,expected,given};
       }
@@ -189,7 +209,7 @@ const tags=new Set([
   'table','thead','tbody','tr','th','td'
 ]);
 
-export function validImage(src:unknown):src is string{return typeof src==='string'&&src.length<=220000&&/^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/.test(src)}
+export function validImage(src:unknown):src is string{return typeof src==='string'&&src.length<=500000&&/^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/.test(src)}
 
 export function parseLesson(body:string):LessonNode[]|null{
   if(!body.startsWith(RICH_PREFIX))return null;
@@ -207,7 +227,7 @@ export function parseLesson(body:string):LessonNode[]|null{
         return true;
       }
       if(n.tag==='file')return validLessonFile(n.file);
-      if(n.tag==='img')return ++images<=3&&validImage(n.src)&&typeof n.alt==='string'&&n.alt.length<=250;
+      if(n.tag==='img')return ++images<=12&&validImage(n.src)&&typeof n.alt==='string'&&n.alt.length<=250;
       return Array.isArray(n.children)&&n.children.every((c:any)=>check(c,depth+1));
     };
     return Array.isArray(nodes)&&nodes.every(n=>check(n,0))?nodes:null;
@@ -267,6 +287,16 @@ export function appendLessonText(body: string, text: string) {
 export function validateLesson(body:string){return new TextEncoder().encode(body).length<=MAX_LESSON_BYTES&&lessonText(body).length<=150000&&(!body.startsWith(RICH_PREFIX)||parseLesson(body)!==null)}
 
 export function appendLessonFile(body:string,file:LessonFile){return encodeLesson([...(parseLesson(body)||(body?[{tag:'p',children:[{tag:'#text',text:body}]}]:[])),{tag:'file',file}])}
+
+export function appendLessonImage(body: string, image: { src: string; alt?: string; width?: number; height?: number }): string {
+  const existing = parseLesson(body) || (body ? [{ tag: "p" as const, children: [{ tag: "#text" as const, text: body }] }] : []);
+  const imgNode: LessonNode = {
+    tag: "img",
+    src: image.src,
+    alt: (image.alt || "").slice(0, 160)
+  };
+  return encodeLesson([...existing, imgNode]);
+}
 
 export function materialLessonBody(kind:string,body:string){return kind==='Uppgift'&&!lessonExercises(body).length?encodeLesson([...(parseLesson(body)||[{tag:'p',children:[{tag:'#text',text:body}]}]),{tag:'exercise',exercise:{id:'legacy-task',type:'text',prompt:'Skriv ditt svar på uppgiften',options:[]}}]):body}
 

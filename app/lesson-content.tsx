@@ -1,6 +1,6 @@
 import LessonFileLink from './lesson-file-link';
 import { createElement, useState } from 'react';
-import { parseLesson, type LessonNode, type Answers, type Exercise } from './lesson-format';
+import { parseLesson, matchesExpectedAnswer, type LessonNode, type Answers, type Exercise } from './lesson-format';
 
 export default function LessonContent({
   body,
@@ -37,9 +37,8 @@ export default function LessonContent({
           q.correctOptions!.forEach((exp, idx) => {
             if (!exp.trim()) return;
             totalCount++;
-            const userAns = (rowAnswers[idx] || '').trim().toLowerCase();
-            const accepted = exp.split(/[|/]/).map(s => s.trim().toLowerCase()).filter(Boolean);
-            if (accepted.includes(userAns)) correctCount++;
+            const userAns = rowAnswers[idx] || '';
+            if (matchesExpectedAnswer(userAns, exp)) correctCount++;
           });
         }
 
@@ -53,9 +52,9 @@ export default function LessonContent({
               {q.options.map((line, rowIdx) => {
                 const userVal = rowAnswers[rowIdx] || '';
                 const expected = q.correctOptions?.[rowIdx] || '';
-                const acceptedVariants = expected.split(/[|/]/).map(s => s.trim().toLowerCase()).filter(Boolean);
-                const isCorrect = isGraded && acceptedVariants.length > 0 && acceptedVariants.includes(userVal.trim().toLowerCase());
-                const isIncorrect = isGraded && acceptedVariants.length > 0 && (!userVal.trim() || !acceptedVariants.includes(userVal.trim().toLowerCase()));
+                const hasExpected = !!expected.trim();
+                const isCorrect = isGraded && hasExpected && matchesExpectedAnswer(userVal, expected);
+                const isIncorrect = isGraded && hasExpected && (!userVal.trim() || !matchesExpectedAnswer(userVal, expected));
 
                 // Clean line of facit marker if present: e.g. "1 [en gräns|facit] flera gränser"
                 const displayLine = line.replace(/\[([^\]|]+)\|([^\]]+)\]/g, '____');
@@ -109,7 +108,7 @@ export default function LessonContent({
                       )}
                     </div>
 
-                    {isGraded && acceptedVariants.length > 0 && (
+                    {isGraded && hasExpected && (
                       <div className="workbook-feedback">
                         {isCorrect ? (
                           <span className="badge badge-success">✓ Rätt</span>
@@ -199,9 +198,9 @@ export default function LessonContent({
                         const cellIdx = getCellIndex(rIdx, cIdx);
                         const cellVal = cellAnswers[cellIdx] || '';
                         const expected = q.correctOptions?.[cellIdx] || '';
-                        const accepted = expected.split(/[|/]/).map(s => s.trim().toLowerCase()).filter(Boolean);
-                        const isCorrect = isGraded && accepted.length > 0 && accepted.includes(cellVal.trim().toLowerCase());
-                        const isIncorrect = isGraded && accepted.length > 0 && (!cellVal.trim() || !accepted.includes(cellVal.trim().toLowerCase()));
+                        const hasExpected = !!expected.trim();
+                        const isCorrect = isGraded && hasExpected && matchesExpectedAnswer(cellVal, expected);
+                        const isIncorrect = isGraded && hasExpected && (!cellVal.trim() || !matchesExpectedAnswer(cellVal, expected));
 
                         return (
                           <td key={cIdx}>

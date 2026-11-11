@@ -3,8 +3,8 @@ import {useRef,useState} from 'react';
 import type {LessonFile} from './lesson-files';
 import {collectMaterial,type CollectedMaterial} from './material-import';
 type Item={id:string;file:File;status:'waiting'|'working'|'done'|'warning'|'error';detail:string;attachment?:LessonFile};
-export default function MaterialCollector({demo,locked,sourceCount,onAdd,onWeb,onBusy,files,onRemove}:{files:LessonFile[];onRemove:(ids:string[])=>void;demo:boolean;locked:boolean;sourceCount:number;onAdd:(material:CollectedMaterial)=>void;onWeb:(url:string)=>Promise<void>;onBusy:(busy:boolean)=>void}){
- const [mode,setMode]=useState('file'),[items,setItems]=useState<Item[]>([]),[working,setWorking]=useState(false),[dragging,setDragging]=useState(false),[error,setError]=useState(''),[url,setUrl]=useState(''),[webDone,setWebDone]=useState(false);
+export default function MaterialCollector({demo,locked,sourceCount,onAdd,onWeb,onBusy,files,onRemove,initialMode='file'}:{files:LessonFile[];onRemove:(ids:string[])=>void;demo:boolean;locked:boolean;sourceCount:number;onAdd:(material:CollectedMaterial)=>void;onWeb:(url:string)=>Promise<void>;onBusy:(busy:boolean)=>void;initialMode?:'file'|'ai'|'text'|'web'}){
+ const [mode,setMode]=useState<'file'|'ai'|'text'|'web'>(initialMode),[items,setItems]=useState<Item[]>([]),[working,setWorking]=useState(false),[dragging,setDragging]=useState(false),[error,setError]=useState(''),[url,setUrl]=useState(''),[webDone,setWebDone]=useState(false);
  const [selectedIds,setSelectedIds]=useState<string[]>([]);
  const input=useRef<HTMLInputElement>(null),aiInput=useRef<HTMLInputElement>(null),running=useRef(false);const disabled=locked||working;
  const change=(id:string,values:Partial<Item>)=>setItems(list=>list.map(item=>item.id===id?{...item,...values}:item));

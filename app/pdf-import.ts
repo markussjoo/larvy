@@ -39,6 +39,86 @@ type OcrWorker = {
 // Keep this cache separate: older browser caches contain the smaller integer model.
 const OCR_LANG_PATH = 'https://cdn.jsdelivr.net/gh/naptha/tessdata@gh-pages/4.0.0_best';
 
+export type PdfExtractResult = {
+  text: string;
+  images: { src: string; alt: string }[];
+};
+
+export async function extractImagesFromPdfPage(page: any, maxImages = 3): Promise<{ src: string; alt: string }[]> {
+  const images: { src: string; alt: string }[] = [];
+  try {
+    const ops = await page.getOperatorList();
+    const fns = ops.fnArray;
+    const args = ops.argsArray;
+    for (let i = 0; i < fns.length && images.length < maxImages; i++) {
+      // 85 is paintImageXObject, 86 is paintInlineImageXObject
+      if (fns[i] === 85 || fns[i] === 86) {
+        const objId = args[i][0];
+        if (typeof objId === 'string' && page.objs?.has?.(objId)) {
+          const imgData = await new Promise<any>(resolve => {
+            page.objs.get(objId, (data: any) => resolve(data));
+          });
+          if (imgData && imgData.data && imgData.width > 50 && imgData.height > 50) {
+            const canvas = document.createElement('canvas');
+            const w = imgData.width;
+            const h = imgData.height;
+            // Downscale for compact storage
+            const scale = Math.min(1, 900 / Math.max(w, h));
+            canvas.width = Math.max(1, Math.round(w * scale));
+            canvas.height = Math.max(1, Math.round(h * scale));
+            const ctx = canvas.getContext('2d');
+            if (ctx) {
+              const tempCanvas = document.createElement('canvas');
+              tempCanvas.width = w;
+              tempCanvas.height = h;
+              const tempCtx = tempCanvas.getContext('2d');
+              if (tempCtx) {
+                const imgDataObj = tempCtx.createImageData(w, h);
+                // Handle RGB or RGBA
+                if (imgData.data.length === w * h * 4) {
+                  imgDataObj.data.set(imgData.data);
+                } else if (imgData.data.length === w * h * 3) {
+                  let j = 0;
+                  for (let k = 0; k < imgData.data.length; k += 3) {
+                    imgDataObj.data[j] = imgData.data[k];
+                    imgDataObj.data[j + 1] = imgData.data[k + 1];
+                    imgDataObj.data[j + 2] = imgData.data[k + 2];
+                    imgDataObj.data[j + 3] = 255;
+                    j += 4;
+                  }
+                } else if (imgData.data.length === w * h) {
+                  // Grayscale
+                  let j = 0;
+                  for (let k = 0; k < imgData.data.length; k++) {
+                    const g = imgData.data[k];
+                    imgDataObj.data[j] = g;
+                    imgDataObj.data[j + 1] = g;
+                    imgDataObj.data[j + 2] = g;
+                    imgDataObj.data[j + 3] = 255;
+                    j += 4;
+                  }
+                }
+                tempCtx.putImageData(imgDataObj, 0, 0);
+                ctx.drawImage(tempCanvas, 0, 0, canvas.width, canvas.height);
+                tempCanvas.width = 0;
+                tempCanvas.height = 0;
+
+                const base64 = canvas.toDataURL('image/jpeg', 0.75);
+                if (base64.length <= 480000) {
+                  images.push({ src: base64, alt: 'Bild från PDF' });
+                }
+              }
+            }
+            canvas.width = 0;
+            canvas.height = 0;
+          }
+        }
+      }
+    }
+  } catch {}
+  return images;
+}
+
 export function extractPdfText(items: any[]): string {
   let text = '', previous: any = null;
   for (const item of items) {
@@ -290,12 +370,12 @@ export async function readImageText(file: File, onProgress: (message: string) =>
   }
 }
 
-export async function readPdfText(
+export async function readPdfData(
   bytes: Uint8Array,
   reader: any,
   onProgress: (page: number, total: number) => void = () => {},
-  options: { forceOcr?: boolean; onOcrProgress?: (message: string) => void } = {}
-) {
+  options: { forceOcr?: boolean; onOcrProgress?: (message: string) => void; extractImages?: boolean } = {}
+): Promise<PdfExtractResult> {
   const task = reader.getDocument({
     data: bytes,
     isEvalSupported: false,
@@ -313,6 +393,7 @@ export async function readPdfText(
     total = pdf.numPages;
     if (total > 100) throw Error('PDF-filen får innehålla högst 100 sidor. Dela upp filen.');
     const pages: string[] = [];
+    const allImages: { src: string; alt: string }[] = [];
     let length = 0;
 
     for (let i = 1; i <= total; i++) {
@@ -320,6 +401,12 @@ export async function readPdfText(
       onProgress(i, total);
       const page = await pdf.getPage(i);
       try {
+        // Extract embedded pictures if enabled
+        if (options.extractImages && allImages.length < 5) {
+          const pageImages = await extractImagesFromPdfPage(page, 5 - allImages.length);
+          allImages.push(...pageImages);
+        }
+
         const content = await page.getTextContent();
         const items = Array.isArray(content.items) ? content.items : [];
         let text = extractPdfText(items);
@@ -351,6 +438,24 @@ export async function readPdfText(
 
             const recognized = await recognizeCanvasText(worker, canvas, status);
             if (recognized) text = recognized;
+
+            // If it is a full-page scan without text or images, capture a clean thumbnail/illustration if needed
+            if (options.extractImages && allImages.length === 0) {
+              const snapCanvas = document.createElement('canvas');
+              const snapScale = Math.min(1, 900 / Math.max(viewport.width, viewport.height));
+              snapCanvas.width = Math.max(1, Math.round(viewport.width * snapScale));
+              snapCanvas.height = Math.max(1, Math.round(viewport.height * snapScale));
+              const snapCtx = snapCanvas.getContext('2d');
+              if (snapCtx) {
+                snapCtx.drawImage(canvas, border, border, viewport.width, viewport.height, 0, 0, snapCanvas.width, snapCanvas.height);
+                const b64 = snapCanvas.toDataURL('image/jpeg', 0.75);
+                if (b64.length <= 480000) {
+                  allImages.push({ src: b64, alt: `Illustration sida ${i}` });
+                }
+              }
+              snapCanvas.width = 0;
+              snapCanvas.height = 0;
+            }
           } finally {
             canvas.width = 0;
             canvas.height = 0;
@@ -366,8 +471,8 @@ export async function readPdfText(
     }
 
     const text = pages.join('\n\n').trim();
-    if (!text) throw Error('Ingen text kunde tolkas i PDF-filen. Prova en tydligare skanning eller skriv texten manuellt.');
-    return text;
+    if (!text && allImages.length === 0) throw Error('Ingen text eller bild kunde tolkas i PDF-filen. Prova en tydligare skanning eller skriv texten manuellt.');
+    return { text, images: allImages };
   } catch (error) {
     if ((error as Error)?.name === 'PasswordException') throw Error('PDF-filen är lösenordsskyddad. Ladda upp en upplåst kopia.');
     if ((error as Error)?.name === 'InvalidPDFException') throw Error('PDF-filen kunde inte läsas. Kontrollera att filen är en giltig PDF eller spara om den som PDF.');
@@ -376,4 +481,14 @@ export async function readPdfText(
     try { await worker?.terminate(); } catch {}
     try { await task.destroy(); } catch {}
   }
+}
+
+export async function readPdfText(
+  bytes: Uint8Array,
+  reader: any,
+  onProgress: (page: number, total: number) => void = () => {},
+  options: { forceOcr?: boolean; onOcrProgress?: (message: string) => void } = {}
+) {
+  const result = await readPdfData(bytes, reader, onProgress, options);
+  return result.text;
 }

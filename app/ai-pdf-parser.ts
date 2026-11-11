@@ -245,13 +245,27 @@ export function parseRawTextToAiWorkbook(rawText: string): AiWorkbookData {
       }
 
       // Check fill_in with blank
-      const parts = rest.split(/(?:_{2,}|\[blank\]|\.{3,}|\[[^\]|]+\|([^\]]+)\])/);
-      if (parts.length >= 2) {
-        // Extract embedded facit if present
-        const facitMatch = rest.match(/\[([^\]|]+)\|([^\]]+)\]/);
-        const ans = facitMatch ? facitMatch[2].trim() : '';
-        const cleanPrefix = rest.replace(/\[([^\]|]+)\|([^\]]+)\]/g, '____').split('____')[0]?.trim() || '';
-        const cleanSuffix = rest.replace(/\[([^\]|]+)\|([^\]]+)\]/g, '____').split('____')[1]?.trim() || '';
+      const parts = rest.split(/(?:_{2,}|\[blank\]|\.{3,}|\[[^\]|]+\|([^\]]+)\]|\[([^\]]+)\]|\(([a-zåäöA-ZÅÄÖ\s\/-]+)\))/i);
+      if (parts.length >= 2 || /\[([^\]]+)\]/.test(rest) || /\(([a-zåäöA-ZÅÄÖ\s\/-]+)\)/i.test(rest)) {
+        // Extract embedded facit if present: [answer], [hint|answer], (answer)
+        const pipeMatch = rest.match(/\[([^\]|]+)\|([^\]]+)\]/);
+        const bracketMatch = !pipeMatch ? rest.match(/\[([^\]]+)\]/) : null;
+        const parenMatch = !pipeMatch && !bracketMatch ? rest.match(/\(([a-zåäöA-ZÅÄÖ\s\/-]{2,40})\)/i) : null;
+        
+        let ans = '';
+        if (pipeMatch) ans = pipeMatch[2].trim();
+        else if (bracketMatch) ans = bracketMatch[1].trim();
+        else if (parenMatch) ans = parenMatch[1].trim();
+
+        // Remove the bracketed/parenthesized answer token to form the gap ____
+        const normalizedLine = rest
+          .replace(/\[([^\]|]+)\|([^\]]+)\]/g, '____')
+          .replace(/\[([^\]]+)\]/g, '____')
+          .replace(/\(([a-zåäöA-ZÅÄÖ\s\/-]{2,40})\)/gi, '____');
+
+        const segs = normalizedLine.split('____');
+        const cleanPrefix = segs[0]?.trim() || '';
+        const cleanSuffix = segs.slice(1).join(' ').trim() || '';
 
         exercises.push({
           id,
