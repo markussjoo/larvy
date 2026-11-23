@@ -107,12 +107,6 @@ export async function extractMaterialData(file: File, onProgress: (message: stri
   text = text.normalize("NFC").replace(/\r\n?/g, "\n").replace(/\n{4,}/g, "\n\n").trim();
   if (!text && images.length === 0) throw Error("Ingen läsbar text eller bild hittades i filen.");
 
-  if (isAiMode && text) {
-    onProgress("AI strukturerar till exakt grammatik-JSON…");
-    const aiData = parseRawTextToAiWorkbook(text);
-    return { text: JSON.stringify(aiData), images };
-  }
-
   if (text && text.length > 150000) throw Error("Texten är för lång för en lektion. Dela upp materialet.");
   return { text, images };
 }

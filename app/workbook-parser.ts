@@ -63,7 +63,21 @@ export function parseWorkbookTextToNodes(rawText: string): LessonNode[] {
       continue;
     }
 
-    // 2. Check for Table (e.g. Ordlista with columns: Ord | Översättning | Uttal | Skriv)
+    // 2. Word bank box: e.g. [och | så | men | för]
+    if (/^\[.+\]$/.test(line) && (line.includes('|') || line.includes(' '))) {
+      const words = line.slice(1, -1).split(/[|·]/).map(w => w.trim()).filter(Boolean);
+      nodes.push({
+        tag: 'div',
+        children: words.map(w => ({
+          tag: 'span',
+          children: [{ tag: '#text', text: w }]
+        }))
+      });
+      i++;
+      continue;
+    }
+
+    // 3. Check for Table (e.g. Ordlista with columns: Ord | Översättning | Uttal | Skriv)
     if (line.includes('|') || /^(?:Ord|Word)\s+(?:Översättning|Translation)\s+(?:Uttal|Pronunciation)\s+(?:Skriv|Write)/i.test(line)) {
       const tableLines: string[] = [];
       while (i < lines.length && (lines[i].includes('|') || lines[i].trim().split(/\s{2,}/).length >= 2)) {
@@ -79,27 +93,22 @@ export function parseWorkbookTextToNodes(rawText: string): LessonNode[] {
       }
     }
 
-    // 3. Word bank box: e.g. [och | så | men | för] or "och så men för" inside a box line
-    if (/^\[.+\]$/.test(line) && (line.includes('|') || line.includes(' '))) {
-      const words = line.slice(1, -1).split(/[|·]/).map(w => w.trim()).filter(Boolean);
-      nodes.push({
-        tag: 'div',
-        children: words.map(w => ({
-          tag: 'span',
-          children: [{ tag: '#text', text: w }]
-        }))
-      });
-      i++;
-      continue;
-    }
-
     // 4. Example callout box: "Exempel: ..."
     if (/^Exempel\s*:/i.test(line)) {
       const exampleLines = [line];
+      const isSingleLineExample = /\b(?:var|bodde)\b.*\b(?:mellan|men|och|så|för)\b.*\./i.test(line);
       i++;
-      while (i < lines.length && lines[i].trim() && !/^\d+[\s.)]/.test(lines[i].trim()) && !/^[A-Z]\s+[A-ZÅÄÖa-zåäö]/.test(lines[i].trim())) {
-        exampleLines.push(lines[i].trim());
-        i++;
+      if (!isSingleLineExample) {
+        while (
+          i < lines.length &&
+          lines[i].trim() &&
+          !/^\d+[\s.)]/.test(lines[i].trim()) &&
+          !/^[A-Z]\s+[A-ZÅÄÖa-zåäö]/.test(lines[i].trim()) &&
+          exampleLines.length < 2
+        ) {
+          exampleLines.push(lines[i].trim());
+          i++;
+        }
       }
       nodes.push({
         tag: 'blockquote',
@@ -122,15 +131,27 @@ export function parseWorkbookTextToNodes(rawText: string): LessonNode[] {
     }
 
     // 6. Numbered Gap / Blank exercises: e.g.
-    // "1 heter/Berlin/Tysklands huvudstad ____"
-    // "1 Människor kunde passera fritt... ____ det gick inte..."
+    // "1 heter/Berlin/Tysklands huvudstad" (with "____" on next line -> full-width stacked line below)
+    // "1 Människor kunde passera fritt... ____ det gick inte..." (inline blank inside sentence)
     // "1 skriv i singular... flera gränser"
-    const isGapLine = /^\d+[\s.)]/.test(line) && (
+    const nextNonEmpty = (() => {
+      for (let k = i + 1; k < lines.length; k++) {
+        if (lines[k].trim()) return lines[k].trim();
+      }
+      return '';
+    })();
+    const isChoiceHeader = /^\d+[\s.)]/.test(line) && (
+      /\?$/.test(line) &&
+      (/^(?:Spår\s*)?(?:\[\s*\]|\[[I|LTJ)]+\]|\(\s*\)|LI\b|LJ\b|\[\||\|[\s|]+\||[a-d]\)|\-|•|□)/i.test(nextNonEmpty))
+    );
+
+    const isGapLine = !isChoiceHeader && (/^\d+[\s.)]/.test(line) || /^[>»]\s+.*\/.*\/.*/.test(line)) && (
       line.includes('____') ||
+      nextNonEmpty === '____' ||
       line.includes('/') ||
       line.includes('[blank]') ||
       /\[[^\]|]+\|[^\]]+\]/.test(line) ||
-      /\s{3,}/.test(line) // multiple spaces indicating a gap
+      /\s{3,}/.test(line)
     );
 
     if (isGapLine) {
@@ -139,26 +160,63 @@ export function parseWorkbookTextToNodes(rawText: string): LessonNode[] {
       if (nodes.length > 0 && nodes[nodes.length - 1].tag === 'p') {
         const lastP = nodes.pop();
         prompt = lastP?.children?.[0]?.text || '';
+      } else if (nodes.length > 1 && nodes[nodes.length - 1].tag === 'blockquote' && nodes[nodes.length - 2].tag === 'p') {
+        prompt = nodes[nodes.length - 2]?.children?.[0]?.text || '';
+      } else if (nodes.length > 2 && nodes[nodes.length - 1].tag === 'blockquote' && nodes[nodes.length - 2].tag === 'div' && nodes[nodes.length - 3].tag === 'p') {
+        prompt = nodes[nodes.length - 3]?.children?.[0]?.text || '';
       }
 
+      let autoNum = 1;
       while (i < lines.length) {
-        const cur = lines[i].trim();
-        if (/^\d+[\s.)]/.test(cur)) {
-          // Normalize blanks in this line
-          let normalizedLine = cur;
-          if (!normalizedLine.includes('____') && !normalizedLine.includes('[blank]') && !/\[[^\]|]+\|[^\]]+\]/.test(normalizedLine)) {
-            // If it has slashes (like word order exercise: 1 heter/Berlin/Tysklands huvudstad)
-            if (normalizedLine.includes('/')) {
-              normalizedLine += ' ____';
-            } else if (/\s{3,}/.test(normalizedLine)) {
-              normalizedLine = normalizedLine.replace(/\s{3,}/g, ' ____ ');
-            } else {
-              normalizedLine += ' ____';
+        let cur = lines[i].trim();
+        if (!cur) {
+          i++;
+          continue;
+        }
+        // Fix OCR misread of leading number (e.g. "> jag/har/varit..." instead of "5 jag/har/varit...")
+        if (/^[>»]\s+/.test(cur) && cur.includes('/')) {
+          cur = `${autoNum} ` + cur.replace(/^[>»]\s+/, '');
+        }
+        const numMatch = cur.match(/^(\d+)[\s.)]+(.*)$/);
+        if (numMatch) {
+          autoNum = (parseInt(numMatch[1], 10) || autoNum) + 1;
+          let normalizedLine = `${numMatch[1]} ${numMatch[2].replace(/^\./, '').trim()}`;
+
+          // Check if the immediate next line is a standalone full-width writing line ("____")
+          let hasStandaloneLineBelow = false;
+          if (i + 1 < lines.length && lines[i + 1].trim() === '____') {
+            hasStandaloneLineBelow = true;
+            i++; // consume the standalone "____" line so it renders as a full-width stacked input below!
+          }
+
+          if (!hasStandaloneLineBelow) {
+            if (
+              !normalizedLine.includes('____') &&
+              !normalizedLine.includes('[blank]') &&
+              !/\[[^\]|]+\|[^\]]+\]/.test(normalizedLine)
+            ) {
+              if (/\s{3,}/.test(normalizedLine)) {
+                normalizedLine = normalizedLine.replace(/\s{3,}/g, ' ____ ');
+              }
+              // Note: if it has slashes (like "8 man/byggde/1961/muren"), leave it without '____'
+              // so LessonContent renders the full-width writing field on the line underneath!
             }
           }
+
           gapLines.push(normalizedLine);
           i++;
-        } else if (gapLines.length > 0 && cur && !/^[A-Z]\s+/.test(cur) && !cur.startsWith('Kapitel') && !cur.startsWith('Exempel:') && !/^(?:HÖRA|Grammatik|Ordlista)/i.test(cur)) {
+        } else if (cur === '____' && gapLines.length > 0) {
+          // Standalone full-width line underneath the current gap prompt
+          i++;
+        } else if (
+          gapLines.length > 0 &&
+          cur &&
+          !/^[A-Z]\s+/.test(cur) &&
+          !cur.startsWith('Kapitel') &&
+          !cur.startsWith('Exempel:') &&
+          !/^(?:HÖRA|Grammatik|Ordlista)/i.test(cur) &&
+          !cur.includes('|')
+        ) {
           gapLines[gapLines.length - 1] += ' ' + cur;
           i++;
         } else {
@@ -186,13 +244,30 @@ export function parseWorkbookTextToNodes(rawText: string): LessonNode[] {
       const qPrompt = line;
       i++;
       const opts: string[] = [];
+      const checkboxLineRegex = /^(?:(?:Spår|Spar|SN|eo)\s*\d*\s*)?(?:\[\s*\]|[\[(]?[I|LTJ)\s_"]+[\])]|\[?[I|LTJ)\s_"]+\]|\[\s*____\s*\[\s*\||\[\||\|[\s|]+\||LI\b|LJ\b|Li\b|I\]|\[I|i\s+I\b|I\s+I\b|i\b(?=\s+[A-ZÅÄÖ])|MH\b|MM\b|\(\s*\)|[a-d]\)|\-|\*|•|□|=)\s*(.+)/i;
+
       while (i < lines.length) {
         const cur = lines[i].trim();
-        if (/^(?:\[\s*\]|\(\s*\)|[a-d]\)|\-|\*|•|□)\s*(.+)/i.test(cur)) {
-          const optText = cur.replace(/^(?:\[\s*\]|\(\s*\)|[a-d]\)|\-|\*|•|□)\s*/i, '').trim();
-          opts.push(optText);
+        if (!cur) {
           i++;
-        } else if (opts.length > 0 && cur && !/^\d+[\s.)]/.test(cur)) {
+          continue;
+        }
+        // Skip standalone "Spår 01", "Li", "eo" noise tokens
+        if (/^(?:Spår\s*\d*|Spar\s*\d*|SN|Li|LJ|LI|eo|\[\s*\])$/i.test(cur)) {
+          i++;
+          continue;
+        }
+        if (/^\d+[\s.)]+\S/.test(cur) || /^Språkvägen/i.test(cur)) {
+          break;
+        }
+        const cbMatch = cur.match(checkboxLineRegex);
+        if (cbMatch) {
+          const optText = cbMatch[1]
+            .replace(/^(?:\[\s*\]|\[?[I|LTJ)\s_"]+\]|LI\b|LJ\b|\|\s*\||-)\s*/i, '')
+            .trim();
+          if (optText) opts.push(optText);
+          i++;
+        } else if (opts.length > 0 && cur) {
           opts[opts.length - 1] += ' ' + cur;
           i++;
         } else {

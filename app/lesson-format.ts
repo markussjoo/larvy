@@ -264,8 +264,8 @@ export function appendLessonText(body: string, text: string) {
     const aiData = parseRawTextToAiWorkbook(trimmed);
     newNodes = convertAiJsonToLessonNodes(aiData);
   } else {
-    // If text contains workbook patterns (blanks '____', tables '|', checkboxes '[ ]', chapters), parse into interactive workbook nodes!
-    const hasWorkbookPatterns = /Kapitel\s+\d+|Språkvägen|____|\[\s*\]|\|\s*[^|]+\s*\|/i.test(text);
+    // If text contains workbook patterns (blanks '____', tables '|', checkboxes '[ ]', numbered exercises, slash prompts, chapters), parse into interactive workbook nodes!
+    const hasWorkbookPatterns = /Kapitel\s+\d+|Språkvägen|____|\[\s*\]|\|\s*[^|]+\s*\||^\s*\d+[\s.)]+\S+|\w+\/\w+\/\w+/im.test(text);
     newNodes = hasWorkbookPatterns
       ? parseWorkbookTextToNodes(text)
       : (text.split(/\r?\n\s*\r?\n/).map(p => p.trim()).filter(Boolean)).map(p => ({

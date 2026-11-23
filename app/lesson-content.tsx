@@ -76,22 +76,39 @@ export default function LessonContent({
                   onAnswer?.(q.id, nextAnswers);
                 };
 
+                const blankCount = Math.max(1, restParts.length - 1);
+                const subValues = blankCount > 1 ? userVal.split(' / ') : [userVal];
+                const updateSubAnswer = (subIdx: number, partVal: string) => {
+                  if (blankCount === 1) {
+                    updateAnswer(partVal);
+                    return;
+                  }
+                  const nextSub = Array.from({ length: blankCount }, (_, k) => subValues[k] || '');
+                  nextSub[subIdx] = partVal;
+                  updateAnswer(nextSub.join(' / '));
+                };
+
                 return (
                   <div key={rowIdx} className={`workbook-gap-row ${isCorrect ? 'is-correct' : ''} ${isIncorrect ? 'is-wrong' : ''}`}>
                     <div className="workbook-row-content">
                       {rowNum && <span className="workbook-row-num">{rowNum}</span>}
                       {hasInlineBlank ? (
                         <div className="workbook-gap-inline textbook-font">
-                          {restParts[0] && <span>{restParts[0]}</span>}
-                          <input
-                            type="text"
-                            className={`fill-input workbook-input ${isCorrect ? 'correct' : ''} ${isIncorrect ? 'incorrect' : ''}`}
-                            value={userVal}
-                            disabled={!onAnswer || readOnly}
-                            placeholder="skriv här…"
-                            onChange={e => updateAnswer(e.target.value)}
-                          />
-                          {restParts.slice(1).join('') && <span>{restParts.slice(1).join('')}</span>}
+                          {restParts.map((part, pIdx) => (
+                            <span key={pIdx} style={{ display: 'inline' }}>
+                              {part && <span>{part}</span>}
+                              {pIdx < restParts.length - 1 && (
+                                <input
+                                  type="text"
+                                  className={`fill-input workbook-input ${isCorrect ? 'correct' : ''} ${isIncorrect ? 'incorrect' : ''}`}
+                                  value={subValues[pIdx] || ''}
+                                  disabled={!onAnswer || readOnly}
+                                  placeholder="skriv här…"
+                                  onChange={e => updateSubAnswer(pIdx, e.target.value)}
+                                />
+                              )}
+                            </span>
+                          ))}
                         </div>
                       ) : (
                         <div className="workbook-gap-stacked">
