@@ -205,9 +205,19 @@ export default function LessonMediaPlayer({ media }: { media: LessonMedia }) {
             </div>
           </div>
 
-          {media.kind === 'audio' && (
-            media.file && media.file.demo && !fileSrc && !error ? (
-              <p className="muted" style={{ margin: 0, fontSize: 12 }}>Förbereder ljudspår…</p>
+          {media.file ? (
+            media.file.demo && !fileSrc && !error ? (
+              <p className="muted" style={{ margin: 0, fontSize: 12 }}>Förbereder {media.kind === 'video' ? 'filmspår' : 'ljudspår'}…</p>
+            ) : media.kind === 'video' ? (
+              <video
+                controls
+                autoPlay
+                preload="metadata"
+                src={fileSrc}
+                style={{ width: '100%', maxHeight: 380, borderRadius: 8, background: '#000', display: 'block' }}
+              >
+                Din webbläsare stödjer inte videouppspelning.
+              </video>
             ) : (
               <audio
                 controls
@@ -219,27 +229,9 @@ export default function LessonMediaPlayer({ media }: { media: LessonMedia }) {
                 Din webbläsare stödjer inte ljuduppspelning.
               </audio>
             )
-          )}
-
-          {media.kind === 'video' && (
-            media.file && media.file.demo && !fileSrc && !error ? (
-              <p className="muted" style={{ margin: 0, fontSize: 12 }}>Förbereder filmspår…</p>
-            ) : (
-              <video
-                controls
-                autoPlay
-                preload="metadata"
-                src={fileSrc}
-                style={{ width: '100%', maxHeight: 380, borderRadius: 8, background: '#000', display: 'block' }}
-              >
-                Din webbläsare stödjer inte videouppspelning.
-              </video>
-            )
-          )}
-
-          {media.kind === 'embed' && media.url && (() => {
+          ) : media.url ? (() => {
             const parsed = parseExternalEmbed(media.url);
-            if (parsed.embedType === 'audio') {
+            if (parsed.embedType === 'audio' || (media.kind === 'audio' && parsed.embedType !== 'iframe')) {
               return (
                 <audio controls autoPlay preload="metadata" src={parsed.src} style={{ width: '100%', display: 'block' }} />
               );
@@ -249,7 +241,7 @@ export default function LessonMediaPlayer({ media }: { media: LessonMedia }) {
                 <video controls autoPlay preload="metadata" src={parsed.src} style={{ width: '100%', maxHeight: 380, borderRadius: 8, background: '#000', display: 'block' }} />
               );
             }
-            const isAudioEmbed = parsed.provider === 'SoundCloud' || parsed.provider === 'Spotify' || parsed.provider === 'Sveriges Radio';
+            const isAudioEmbed = media.kind === 'audio' || parsed.provider === 'SoundCloud' || parsed.provider === 'Spotify' || parsed.provider === 'Sveriges Radio';
             return (
               <div style={{ width: '100%', borderRadius: 8, overflow: 'hidden', background: '#000' }}>
                 <iframe
@@ -263,7 +255,7 @@ export default function LessonMediaPlayer({ media }: { media: LessonMedia }) {
                 />
               </div>
             );
-          })()}
+          })() : null}
 
           {error && <p role="alert" className="error" style={{ marginTop: 6, fontSize: 12 }}>{error}</p>}
         </div>
