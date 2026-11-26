@@ -1,0 +1,1 @@
+(self.webpackChunk_N_E=self.webpackChunk_N_E||[]).push([[974],{5532:(e,t,n)=>{Promise.resolve().then(n.bind(n,9039))},9039:(e,t,n)=>{"use strict";n.r(t),n.d(t,{default:()=>o});var s=n(8117),i=n(6905);function o(){let e=window.location.hostname.endsWith("github.io");return(0,s.jsx)(i.default,{demo:e})}}},e=>{e.O(0,[863,905,569,470,358],()=>e(e.s=5532)),_N_E=e.O()}]);
