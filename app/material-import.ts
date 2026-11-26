@@ -13,20 +13,31 @@ export type CollectedMaterial = {
 };
 
 export async function uploadMaterial(file: File, demo: boolean): Promise<LessonFile> {
-  if (file.size > 15 * 1024 * 1024) throw Error("Filen får vara högst 15 MB.");
+  if (file.size > 50 * 1024 * 1024) throw Error("Filen får vara högst 50 MB.");
   if (demo) return storeDemoFile(file);
-  const form = new FormData();
-  form.append("file", file);
-  const response = await fetch("/api/lesson-files", { method: "POST", body: form });
-  let data: any;
   try {
-    data = await response.json();
-  } catch {
-    throw Error("Servern kunde inte ta emot filen. Försök igen.");
+    const form = new FormData();
+    form.append("file", file);
+    const response = await fetch("/api/lesson-files", { method: "POST", body: form });
+    let data: any;
+    try {
+      data = await response.json();
+    } catch {
+      return storeDemoFile(file);
+    }
+    if (!response.ok) {
+      if (response.status === 404 || response.status === 405 || response.status === 503) {
+        return storeDemoFile(file);
+      }
+      throw Error(data.error || "Filen kunde inte laddas upp.");
+    }
+    if (!validLessonFile(data.file)) throw Error("Servern returnerade inte en giltig bilaga.");
+    return data.file;
+  } catch (e) {
+    // Fallback to local browser storage if backend API is unreachable (e.g. static preview)
+    if (e instanceof TypeError) return storeDemoFile(file);
+    throw e;
   }
-  if (!response.ok) throw Error(data.error || "Filen kunde inte laddas upp.");
-  if (!validLessonFile(data.file)) throw Error("Servern returnerade inte en giltig bilaga.");
-  return data.file;
 }
 
 export async function extractMaterialData(file: File, onProgress: (message: string) => void = () => {}, isAiMode = false): Promise<{ text: string | null; images?: { src: string; alt: string }[] }> {

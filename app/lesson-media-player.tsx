@@ -100,7 +100,8 @@ export default function LessonMediaPlayer({ media }: { media: LessonMedia }) {
     readDemoFile(media.file.id).then(
       blob => {
         if (disposed) return;
-        localUrl = URL.createObjectURL(blob);
+        const viewWin = document.defaultView || window;
+        localUrl = viewWin.URL.createObjectURL(blob);
         setBlobUrl(localUrl);
       },
       e => {
@@ -109,7 +110,11 @@ export default function LessonMediaPlayer({ media }: { media: LessonMedia }) {
     );
     return () => {
       disposed = true;
-      if (localUrl) URL.revokeObjectURL(localUrl);
+      if (localUrl) {
+        try {
+          (document.defaultView || window).URL.revokeObjectURL(localUrl);
+        } catch {}
+      }
     };
   }, [media.file?.id, media.file?.demo]);
 
