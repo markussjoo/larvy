@@ -17,17 +17,17 @@ function parseExternalEmbed(rawUrl: string): {
     if (host === 'youtube.com' || host === 'm.youtube.com') {
       const v = u.searchParams.get('v');
       if (v && /^[a-zA-Z0-9_-]{6,20}$/.test(v)) {
-        return { embedType: 'iframe', src: `https://www.youtube.com/embed/${v}`, provider: 'YouTube' };
+        return { embedType: 'iframe', src: `https://www.youtube.com/embed/${v}?autoplay=1`, provider: 'YouTube' };
       }
       const shortMatch = path.match(/^\/(?:embed|shorts)\/([a-zA-Z0-9_-]{6,20})/);
       if (shortMatch) {
-        return { embedType: 'iframe', src: `https://www.youtube.com/embed/${shortMatch[1]}`, provider: 'YouTube' };
+        return { embedType: 'iframe', src: `https://www.youtube.com/embed/${shortMatch[1]}?autoplay=1`, provider: 'YouTube' };
       }
     }
     if (host === 'youtu.be') {
       const id = path.slice(1).split('/')[0];
       if (id && /^[a-zA-Z0-9_-]{6,20}$/.test(id)) {
-        return { embedType: 'iframe', src: `https://www.youtube.com/embed/${id}`, provider: 'YouTube' };
+        return { embedType: 'iframe', src: `https://www.youtube.com/embed/${id}?autoplay=1`, provider: 'YouTube' };
       }
     }
 
@@ -35,7 +35,7 @@ function parseExternalEmbed(rawUrl: string): {
     if (host === 'vimeo.com' || host === 'player.vimeo.com') {
       const m = path.match(/\/(?:video\/)?(\d+)/);
       if (m) {
-        return { embedType: 'iframe', src: `https://player.vimeo.com/video/${m[1]}`, provider: 'Vimeo' };
+        return { embedType: 'iframe', src: `https://player.vimeo.com/video/${m[1]}?autoplay=1`, provider: 'Vimeo' };
       }
     }
 
@@ -43,7 +43,7 @@ function parseExternalEmbed(rawUrl: string): {
     if (host === 'soundcloud.com') {
       return {
         embedType: 'iframe',
-        src: `https://w.soundcloud.com/player/?url=${encodeURIComponent(rawUrl)}&color=%237c3aed&auto_play=false`,
+        src: `https://w.soundcloud.com/player/?url=${encodeURIComponent(rawUrl)}&color=%237c3aed&auto_play=true`,
         provider: 'SoundCloud'
       };
     }
@@ -89,7 +89,7 @@ function parseExternalEmbed(rawUrl: string): {
 export default function LessonMediaPlayer({ media }: { media: LessonMedia }) {
   const [blobUrl, setBlobUrl] = useState('');
   const [error, setError] = useState('');
-  const [showIframeFallback, setShowIframeFallback] = useState(false);
+  const [open, setOpen] = useState(false);
 
   useEffect(() => {
     if (!media.file?.demo) return;
@@ -119,137 +119,155 @@ export default function LessonMediaPlayer({ media }: { media: LessonMedia }) {
       : '/api/lesson-files/' + media.file.id
     : media.url || '';
 
-  const icon = media.kind === 'audio' ? '🔊' : media.kind === 'video' ? '🎬' : '🔗';
-  const badgeLabel =
-    media.kind === 'audio' ? 'Ljudspår' : media.kind === 'video' ? 'Filmspår' : 'Webblänk / Media';
-
   return (
-    <div
-      className="lesson-media-player"
-      style={{
-        margin: '16px 0',
-        padding: '14px 16px',
-        borderRadius: 12,
-        border: '1px solid rgba(139, 92, 246, 0.28)',
-        background: 'rgba(139, 92, 246, 0.06)'
-      }}
-    >
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 10, flexWrap: 'wrap' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span aria-hidden="true" style={{ fontSize: 18 }}>{icon}</span>
-          <strong style={{ fontSize: 15 }}>{media.title}</strong>
-          <span className="badge" style={{ fontSize: 11 }}>{badgeLabel}</span>
-        </div>
-        {media.url && (
-          <a
-            href={media.url}
-            target="_blank"
-            rel="noopener noreferrer"
-            style={{ fontSize: 12, textDecoration: 'underline' }}
-          >
-            Öppna i ny flik ↗
-          </a>
+    <span className="lesson-media-inline-wrapper" style={{ display: 'inline-block', verticalAlign: 'middle', margin: '4px 6px' }}>
+      <button
+        type="button"
+        onClick={() => setOpen(v => !v)}
+        title={open ? 'Stäng uppspelning' : `Spela upp: ${media.title}`}
+        style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: 7,
+          padding: '6px 13px',
+          borderRadius: 999,
+          border: '1px solid #8b5cf6',
+          background: open ? 'linear-gradient(110deg, #7c3aed, #4f46e5)' : 'rgba(124, 58, 237, 0.14)',
+          color: open ? '#ffffff' : '#c4b5fd',
+          fontWeight: 600,
+          fontSize: 13,
+          lineHeight: 1.2,
+          cursor: 'pointer',
+          boxShadow: open ? '0 3px 12px rgba(124, 58, 237, 0.32)' : 'none',
+          transition: 'all 0.15s ease'
+        }}
+      >
+        {media.kind === 'audio' && (
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+            <path d="M15.54 8.46a5 5 0 0 1 0 7.07" />
+            <path d="M19.07 4.93a10 10 0 0 1 0 14.14" />
+          </svg>
         )}
-      </div>
+        {media.kind === 'video' && (
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <rect x="2" y="3" width="20" height="18" rx="2.5" />
+            <polygon points="10 9 15 12 10 15 10 9" fill="currentColor" />
+          </svg>
+        )}
+        {media.kind === 'embed' && (
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+            <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
+          </svg>
+        )}
+        <span>{media.title}</span>
+        <span style={{ fontSize: 11, opacity: 0.85 }}>{open ? '▲' : '▶'}</span>
+      </button>
 
-      {media.kind === 'audio' && (
-        media.file && media.file.demo && !fileSrc && !error ? (
-          <p className="muted" style={{ margin: 0, fontSize: 13 }}>Förbereder ljudspår…</p>
-        ) : (
-          <audio
-            controls
-            preload="metadata"
-            src={fileSrc}
-            style={{ width: '100%', maxWidth: 540, display: 'block' }}
-          >
-            Din webbläsare stödjer inte ljuduppspelning.
-          </audio>
-        )
-      )}
-
-      {media.kind === 'video' && (
-        media.file && media.file.demo && !fileSrc && !error ? (
-          <p className="muted" style={{ margin: 0, fontSize: 13 }}>Förbereder filmspår…</p>
-        ) : (
-          <video
-            controls
-            preload="metadata"
-            src={fileSrc}
-            style={{ width: '100%', maxHeight: 440, borderRadius: 8, background: '#000', display: 'block' }}
-          >
-            Din webbläsare stödjer inte videouppspelning.
-          </video>
-        )
-      )}
-
-      {media.kind === 'embed' && media.url && (() => {
-        const parsed = parseExternalEmbed(media.url);
-        if (parsed.embedType === 'audio') {
-          return (
-            <audio controls preload="metadata" src={parsed.src} style={{ width: '100%', maxWidth: 540, display: 'block' }} />
-          );
-        }
-        if (parsed.embedType === 'video') {
-          return (
-            <video controls preload="metadata" src={parsed.src} style={{ width: '100%', maxHeight: 440, borderRadius: 8, background: '#000', display: 'block' }} />
-          );
-        }
-        if (parsed.embedType === 'iframe') {
-          const isAudioEmbed = parsed.provider === 'SoundCloud' || parsed.provider === 'Spotify' || parsed.provider === 'Sveriges Radio';
-          return (
-            <div style={{ width: '100%', borderRadius: 8, overflow: 'hidden', background: '#0f172a' }}>
-              <iframe
-                src={parsed.src}
-                title={media.title}
-                width="100%"
-                height={isAudioEmbed ? '166' : '380'}
-                style={{ border: 0, display: 'block' }}
-                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                allowFullScreen
-              />
-            </div>
-          );
-        }
-        // Generic external webpage with audio/video: allow in-browser playback attempt or direct open
-        return (
-          <div>
-            {showIframeFallback ? (
-              <div style={{ width: '100%', borderRadius: 8, overflow: 'hidden', background: '#0f172a', marginTop: 8 }}>
-                <iframe
-                  src={parsed.src}
-                  title={media.title}
-                  width="100%"
-                  height="380"
-                  style={{ border: 0, display: 'block' }}
-                  allow="autoplay; encrypted-media; fullscreen; picture-in-picture"
-                  allowFullScreen
-                />
-              </div>
-            ) : (
-              <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-                <button
-                  type="button"
-                  className="light"
-                  style={{ fontSize: 13, padding: '6px 12px' }}
-                  onClick={() => setShowIframeFallback(true)}
-                >
-                  ▶ Spela upp direkt i webbläsaren
-                </button>
+      {open && (
+        <div
+          className="lesson-media-popover"
+          style={{
+            display: 'block',
+            marginTop: 8,
+            marginBottom: 8,
+            padding: '12px 14px',
+            borderRadius: 12,
+            border: '1px solid rgba(139, 92, 246, 0.35)',
+            background: 'rgba(15, 23, 42, 0.92)',
+            minWidth: 280,
+            maxWidth: 560,
+            boxShadow: '0 8px 24px rgba(0,0,0,0.28)'
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 8 }}>
+            <strong style={{ fontSize: 13, color: '#e2e8f0' }}>{media.title}</strong>
+            <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+              {media.url && (
                 <a
                   href={media.url}
                   target="_blank"
                   rel="noopener noreferrer"
-                  style={{ fontSize: 13 }}
+                  style={{ fontSize: 12, color: '#a78bfa', textDecoration: 'underline' }}
                 >
-                  {media.url} ↗
+                  Öppna i ny flik ↗
                 </a>
-              </div>
-            )}
+              )}
+              <button
+                type="button"
+                className="light"
+                onClick={() => setOpen(false)}
+                style={{ padding: '2px 8px', fontSize: 11 }}
+              >
+                Stäng ✕
+              </button>
+            </div>
           </div>
-        );
-      })()}
 
-      {error && <p role="alert" className="error" style={{ marginTop: 8 }}>{error}</p>}
-    </div>
+          {media.kind === 'audio' && (
+            media.file && media.file.demo && !fileSrc && !error ? (
+              <p className="muted" style={{ margin: 0, fontSize: 12 }}>Förbereder ljudspår…</p>
+            ) : (
+              <audio
+                controls
+                autoPlay
+                preload="metadata"
+                src={fileSrc}
+                style={{ width: '100%', display: 'block' }}
+              >
+                Din webbläsare stödjer inte ljuduppspelning.
+              </audio>
+            )
+          )}
+
+          {media.kind === 'video' && (
+            media.file && media.file.demo && !fileSrc && !error ? (
+              <p className="muted" style={{ margin: 0, fontSize: 12 }}>Förbereder filmspår…</p>
+            ) : (
+              <video
+                controls
+                autoPlay
+                preload="metadata"
+                src={fileSrc}
+                style={{ width: '100%', maxHeight: 380, borderRadius: 8, background: '#000', display: 'block' }}
+              >
+                Din webbläsare stödjer inte videouppspelning.
+              </video>
+            )
+          )}
+
+          {media.kind === 'embed' && media.url && (() => {
+            const parsed = parseExternalEmbed(media.url);
+            if (parsed.embedType === 'audio') {
+              return (
+                <audio controls autoPlay preload="metadata" src={parsed.src} style={{ width: '100%', display: 'block' }} />
+              );
+            }
+            if (parsed.embedType === 'video') {
+              return (
+                <video controls autoPlay preload="metadata" src={parsed.src} style={{ width: '100%', maxHeight: 380, borderRadius: 8, background: '#000', display: 'block' }} />
+              );
+            }
+            const isAudioEmbed = parsed.provider === 'SoundCloud' || parsed.provider === 'Spotify' || parsed.provider === 'Sveriges Radio';
+            return (
+              <div style={{ width: '100%', borderRadius: 8, overflow: 'hidden', background: '#000' }}>
+                <iframe
+                  src={parsed.src}
+                  title={media.title}
+                  width="100%"
+                  height={isAudioEmbed ? '166' : '320'}
+                  style={{ border: 0, display: 'block' }}
+                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; fullscreen"
+                  allowFullScreen
+                />
+              </div>
+            );
+          })()}
+
+          {error && <p role="alert" className="error" style={{ marginTop: 6, fontSize: 12 }}>{error}</p>}
+        </div>
+      )}
+    </span>
   );
 }
