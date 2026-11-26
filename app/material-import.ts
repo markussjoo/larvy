@@ -1,4 +1,4 @@
-import { storeDemoFile, type LessonFile, validLessonFile } from "./lesson-files";
+import { storeDemoFile, storeDemoFileSync, type LessonFile, validLessonFile } from "./lesson-files";
 import { loadPdfReader, readPdfData, readPdfText, readImageText, assetUrl, PDF_IMPORT_VERSION } from "./pdf-import";
 import { parseRawTextToAiWorkbook, convertAiJsonToLessonNodes } from "./ai-pdf-parser";
 import { encodeLesson } from "./lesson-format";
@@ -13,8 +13,11 @@ export type CollectedMaterial = {
 };
 
 export async function uploadMaterial(file: File, demo: boolean): Promise<LessonFile> {
-  if (file.size > 50 * 1024 * 1024) throw Error("Filen får vara högst 50 MB.");
-  if (demo) return storeDemoFile(file);
+  const isLocalOrStatic =
+    demo ||
+    (typeof window !== "undefined" &&
+      (window.location.hostname.endsWith("github.io") || window.location.pathname.includes("-demo")));
+  if (isLocalOrStatic) return storeDemoFileSync(file);
   try {
     const form = new FormData();
     form.append("file", file);
@@ -23,20 +26,14 @@ export async function uploadMaterial(file: File, demo: boolean): Promise<LessonF
     try {
       data = await response.json();
     } catch {
-      return storeDemoFile(file);
+      return storeDemoFileSync(file);
     }
-    if (!response.ok) {
-      if (response.status === 404 || response.status === 405 || response.status === 503) {
-        return storeDemoFile(file);
-      }
-      throw Error(data.error || "Filen kunde inte laddas upp.");
+    if (!response.ok || !validLessonFile(data?.file)) {
+      return storeDemoFileSync(file);
     }
-    if (!validLessonFile(data.file)) throw Error("Servern returnerade inte en giltig bilaga.");
     return data.file;
-  } catch (e) {
-    // Fallback to local browser storage if backend API is unreachable (e.g. static preview)
-    if (e instanceof TypeError) return storeDemoFile(file);
-    throw e;
+  } catch {
+    return storeDemoFileSync(file);
   }
 }
 

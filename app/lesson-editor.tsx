@@ -1,7 +1,7 @@
 'use client';
 import {useEffect,useRef,useState} from 'react';
-import {validLessonFile} from './lesson-files';
-import {uploadMaterial} from './material-import';
+import {storeDemoFileSync,validLessonFile} from './lesson-files';
+import LessonMediaPlayer from './lesson-media-player';
 import {encodeLesson,parseLesson,validImage,validateLesson,validExercise,validLessonMedia,validMediaUrl,type Exercise,type LessonMedia,type LessonNode} from './lesson-format';
 const allowed=new Set(['p','div','br','strong','b','em','i','u','s','h2','h3','ul','ol','li','blockquote','span','font','figure','figcaption','table','thead','tbody','tr','th','td']);
 function fromDOM(root:Node):LessonNode[]{return Array.from(root.childNodes).flatMap((node):LessonNode[]=>{
@@ -37,11 +37,12 @@ function buildMediaPillElement(m:LessonMedia):HTMLElement{
 }
 function fill(root:HTMLElement,body:string){root.replaceChildren();const nodes=parseLesson(body);if(!nodes){root.textContent=body;return}const build=(n:LessonNode):Node=>{if(n.tag==='#text')return document.createTextNode(n.text||'');if(n.tag==='exercise'){const item=document.createElement('div');item.dataset.lessonExercise=JSON.stringify(n.exercise);item.contentEditable='false';item.className='lesson-exercise';const hasKey=(n.exercise!.type==='choice'||n.exercise!.type==='gap')&&n.exercise!.correctOptions&&n.exercise!.correctOptions.length>0;const typeLabel=n.exercise!.type==='text'?'Textfält':n.exercise!.type==='choice'?'Kryssalternativ':n.exercise!.type==='gap'?'Interaktiva linjer / lucktext':'Tabell / Ordlista';item.textContent='✎ '+n.exercise!.prompt+' · '+typeLabel+(hasKey?' (Självrättande)':'')+' · Klicka för att redigera';return item}if(n.tag==='media'&&n.media){return buildMediaPillElement(n.media)}if(n.tag==='file'){const item=document.createElement('span');item.dataset.lessonFile=JSON.stringify(n.file);item.contentEditable='false';item.className='lesson-file-attachment';item.textContent='▤ '+n.file!.name+' · Bilaga';return item}const el=document.createElement(n.tag==='font'?'span':n.tag);if(n.hand!==undefined)el.className=n.hand?'lesson-handwriting':'lesson-normal';if(n.tag==='img'){(el as HTMLImageElement).src=n.src!;(el as HTMLImageElement).alt=n.alt||'';(el as HTMLImageElement).draggable=true;(el as HTMLElement).style.maxWidth='100%';(el as HTMLElement).style.borderRadius='8px';(el as HTMLElement).style.cursor='pointer'}else n.children?.forEach(c=>el.appendChild(build(c)));return el};nodes.forEach((n,idx)=>{if(n.tag==='exercise'&&(idx===0||nodes[idx-1].tag==='exercise')){const spacer=document.createElement('p');spacer.dataset.editorSpacer='true';spacer.style.margin='4px 0';spacer.style.minHeight='18px';spacer.appendChild(document.createElement('br'));root.appendChild(spacer)}root.appendChild(build(n))});if(nodes.length>0&&nodes[nodes.length-1].tag==='exercise'){const endSpacer=document.createElement('p');endSpacer.dataset.editorSpacer='true';endSpacer.style.margin='4px 0';endSpacer.style.minHeight='18px';endSpacer.appendChild(document.createElement('br'));root.appendChild(endSpacer)}}
 export default function LessonEditor({value,onChange,disabled,demo=false}:{value:string;onChange:(value:string)=>void;disabled:boolean;demo?:boolean}){
+ void demo;
  const editor=useRef<HTMLDivElement>(null),lastValue=useRef(''),selection=useRef<Range|null>(null),imageInput=useRef<HTMLInputElement>(null),audioInput=useRef<HTMLInputElement>(null),videoInput=useRef<HTMLInputElement>(null),selectedImage=useRef<HTMLImageElement|null>(null);
  const anchorTarget=useRef<{el:HTMLElement;position:'before'|'after'}|null>(null);
- const [error,setError]=useState(''),[imageBusy,setImageBusy]=useState(false),[mediaBusy,setMediaBusy]=useState<'audio'|'video'|''>(''),[hasImage,setHasImage]=useState(false),[imgAlign,setImgAlign]=useState<'left'|'center'|'right'>('center');
- const [mediaItem,setMediaItem]=useState<LessonMedia|null>(null),[mediaFormKind,setMediaFormKind]=useState<'audio'|'video'|'embed'|''>(''),[mediaFile,setMediaFile]=useState<File|null>(null),[linkUrl,setLinkUrl]=useState(''),[linkTitle,setLinkTitle]=useState(''),[cursorHint,setCursorHint]=useState('');
- useEffect(()=>{if(editor.current&&value!==lastValue.current){fill(editor.current,value);lastValue.current=value;selection.current=null;anchorTarget.current=null;selectedImage.current=null;setHasImage(false);setExercise(null);setMediaItem(null);setMediaFormKind('');setMediaFile(null)}},[value]);
+ const [error,setError]=useState(''),[imageBusy,setImageBusy]=useState(false),[hasImage,setHasImage]=useState(false),[imgAlign,setImgAlign]=useState<'left'|'center'|'right'>('center');
+ const [mediaItem,setMediaItem]=useState<LessonMedia|null>(null),[mediaFormKind,setMediaFormKind]=useState<'audio'|'video'|'embed'|''>(''),[mediaFile,setMediaFile]=useState<File|null>(null),[linkUrl,setLinkUrl]=useState(''),[linkTitle,setLinkTitle]=useState(''),[cursorHint,setCursorHint]=useState(''),[justInsertedNotice,setJustInsertedNotice]=useState('');
+ useEffect(()=>{if(editor.current&&value!==lastValue.current){fill(editor.current,value);lastValue.current=value;selection.current=null;anchorTarget.current=null;selectedImage.current=null;setHasImage(false);setExercise(null);setMediaItem(null);setMediaFormKind('');setMediaFile(null);setJustInsertedNotice('')}},[value]);
  function remember(){
   const s=window.getSelection();
   if(s?.rangeCount&&editor.current?.contains(s.anchorNode)){
@@ -69,6 +70,7 @@ export default function LessonEditor({value,onChange,disabled,demo=false}:{value
   if(!validImage(src))throw Error('Bilden är för detaljrik. Prova en mindre bild.');
   if(!editor.current)return;const nodes=fromDOM(editor.current);if(!validateLesson(encodeLesson([...nodes,{tag:'img',src,alt:file.name.replace(/\.[^.]+$/,'').slice(0,250)}])))throw Error('Bilden ryms inte i lektionen. Ta bort en tidigare bild eller använd en mindre bild.');
   const picture=document.createElement('img');picture.src=src;picture.alt=file.name.replace(/\.[^.]+$/,'').slice(0,250);
+  picture.draggable=true;picture.style.maxWidth='100%';picture.style.borderRadius='8px';picture.style.cursor='pointer';
   if(!insertNodeElementAtCursor(picture))throw Error('Bilden ryms inte i lektionen.');
  }catch(e){setError(e instanceof Error?e.message:'Bilden kunde inte läsas.')}finally{setImageBusy(false);if(imageInput.current)imageInput.current.value=''}}
  const [exercise,setExercise]=useState<Exercise|null>(null),[options,setOptions]=useState(''),[gapFacit,setGapFacit]=useState('');
@@ -149,6 +151,9 @@ export default function LessonEditor({value,onChange,disabled,demo=false}:{value
   exEl.dataset.lessonExercise=JSON.stringify(q);
   exEl.contentEditable='false';
   exEl.className='lesson-exercise';
+  const hasKey=(q.type==='choice'||q.type==='gap')&&q.correctOptions&&q.correctOptions.length>0;
+  const typeLabel=q.type==='text'?'Textfält':q.type==='choice'?'Kryssalternativ':q.type==='gap'?'Interaktiva linjer / lucktext':'Tabell / Ordlista';
+  exEl.textContent='✎ '+q.prompt+' · '+typeLabel+(hasKey?' (Självrättande)':'')+' · Klicka för att redigera';
   if(!insertNodeElementAtCursor(exEl)){setError('Lektionen är för stor eller har för många uppgifter.');return}
   setExercise(null);setError('')
  }
@@ -157,7 +162,7 @@ export default function LessonEditor({value,onChange,disabled,demo=false}:{value
  }
  function insertNodeElementAtCursor(el:HTMLElement):boolean{
   if(!editor.current)return false;
-  // 1. If user clicked a specific block (exercise or media) or placed an anchorTarget, insert relative to that block!
+  // 1. If user clicked a specific block (exercise or media) or placed an anchorTarget, insert relative to that block
   if(anchorTarget.current&&editor.current.contains(anchorTarget.current.el)&&anchorTarget.current.el.parentElement){
    const target=anchorTarget.current.el;
    if(anchorTarget.current.position==='before'){
@@ -173,14 +178,11 @@ export default function LessonEditor({value,onChange,disabled,demo=false}:{value
    if(nonEditableBlock&&editor.current.contains(nonEditableBlock)&&nonEditableBlock.parentElement){
     nonEditableBlock.parentElement.insertBefore(el,nonEditableBlock.nextSibling);
    }else{
-    // If cursor is inside a top-level block (p, h2, div, blockquote) and we are inserting a block-level element (div),
-    // insert right after the current paragraph/heading if at the end, or split/insert cleanly
     let topChild:HTMLElement|null=anchorEl;
     while(topChild&&topChild.parentElement&&topChild.parentElement!==editor.current){
      topChild=topChild.parentElement;
     }
     if(el.tagName==='DIV'&&topChild&&topChild.parentElement===editor.current&&['P','H2','H3','BLOCKQUOTE'].includes(topChild.tagName)){
-     // Check if cursor is near the start of the block
      const preRange=document.createRange();
      preRange.selectNodeContents(topChild);
      preRange.setEnd(range.startContainer,range.startOffset);
@@ -196,15 +198,27 @@ export default function LessonEditor({value,onChange,disabled,demo=false}:{value
     }
    }
   }else{
-   // 3. Fallback: append at the end of editor
-   editor.current.appendChild(el);
+   // 3. Fallback: append at the end of editor (or inside last editable paragraph)
+   const lastChild=editor.current.lastElementChild as HTMLElement|null;
+   if(el.tagName==='SPAN'&&lastChild&&['P','H2','H3','DIV'].includes(lastChild.tagName)&&lastChild.getAttribute('contenteditable')!=='false'){
+    lastChild.appendChild(el);
+   }else{
+    editor.current.appendChild(el);
+   }
   }
   const body=encodeLesson(fromDOM(editor.current));
   if(!validateLesson(body)){
    el.remove();
    return false;
   }
-  fill(editor.current,body);
+  // Keep live DOM intact so selection.current & anchorTarget are never detached!
+  try{
+   const afterRange=document.createRange();
+   afterRange.setStartAfter(el);
+   afterRange.collapse(true);
+   selection.current=afterRange;
+   anchorTarget.current={el,position:'after'};
+  }catch{}
   lastValue.current=body;
   onChange(body);
   return true;
@@ -213,8 +227,85 @@ export default function LessonEditor({value,onChange,disabled,demo=false}:{value
   const el=createMediaElement(m);
   return insertNodeElementAtCursor(el);
  }
+ function updateMediaInDOM(updatedMedia:LessonMedia):boolean{
+  if(!editor.current)return false;
+  const pill=Array.from(editor.current.querySelectorAll<HTMLElement>('[data-lesson-media]')).find(node=>{
+   try{return JSON.parse(node.dataset.lessonMedia||'{}').id===updatedMedia.id}catch{return false}
+  });
+  if(pill){
+   const icon=updatedMedia.kind==='audio'?'🔊':updatedMedia.kind==='video'?'🎬':'🔗';
+   pill.dataset.lessonMedia=JSON.stringify(updatedMedia);
+   pill.textContent=icon+' '+updatedMedia.title+' ▶';
+   const body=encodeLesson(fromDOM(editor.current));
+   if(!validateLesson(body))return false;
+   lastValue.current=body;
+   onChange(body);
+   return true;
+  }
+  const nodes=fromDOM(editor.current);
+  const update=(n:LessonNode):LessonNode=>n.media?.id===updatedMedia.id?{tag:'media',media:updatedMedia}:{...n,...(n.children?{children:n.children.map(update)}:{})};
+  const body=encodeLesson(nodes.map(update));
+  if(!validateLesson(body))return false;
+  fill(editor.current,body);
+  lastValue.current=body;
+  onChange(body);
+  return true;
+ }
+ function handleMediaFileSelected(file:File,fallbackKind:'audio'|'video'){
+  setError('');
+  const cleanName=file.name.replace(/\.[^.]+$/,'').slice(0,120)||(fallbackKind==='video'?'Filmspår':'Ljudspår');
+  const uploadedFile=storeDemoFileSync(file);
+  if(mediaFormKind){
+   const targetKind:'audio'|'video'=mediaFormKind==='video'?'video':fallbackKind;
+   const cleanTitle=(linkTitle.trim()||cleanName).slice(0,200);
+   const m:LessonMedia={
+    id:'media-'+crypto.randomUUID(),
+    kind:targetKind,
+    title:cleanTitle,
+    file:uploadedFile
+   };
+   if(!insertMediaAtCursor(m)){
+    setError('Lektionen har för många mediafiler.');
+    return;
+   }
+   setMediaFormKind('');
+   setMediaFile(null);
+   setLinkUrl('');
+   setLinkTitle('');
+   setMediaItem(m);
+   setJustInsertedNotice(`✓ Knappen "${targetKind==='video'?'🎬':'🔊'} ${cleanTitle} ▶" är nu inlagd där markören stod! Du kan ändra knapptexten nedan eller klicka på Klar.`);
+   return;
+  }
+  if(mediaItem){
+   const updatedMedia:LessonMedia={
+    ...mediaItem,
+    title:(mediaItem.title.trim()||cleanName).slice(0,200),
+    file:uploadedFile
+   };
+   if(updateMediaInDOM(updatedMedia)){
+    setMediaItem(updatedMedia);
+    setMediaFile(null);
+    setJustInsertedNotice(`✓ Filen "${file.name}" är nu kopplad till knappen vid markören!`);
+   }
+  }
+ }
  function moveSelectedMedia(direction:'up'|'down'){
   if(!mediaItem||!editor.current)return;
+  const el=Array.from(editor.current.querySelectorAll<HTMLElement>('[data-lesson-media]')).find(node=>{
+   try{return JSON.parse(node.dataset.lessonMedia||'{}').id===mediaItem.id}catch{return false}
+  });
+  if(el&&el.parentElement){
+   const parent=el.parentElement;
+   if(direction==='up'&&el.previousSibling){
+    parent.insertBefore(el,el.previousSibling);
+    emit();
+    return;
+   }else if(direction==='down'&&el.nextSibling){
+    parent.insertBefore(el,el.nextSibling.nextSibling);
+    emit();
+    return;
+   }
+  }
   const nodes=fromDOM(editor.current);
   const idx=nodes.findIndex(n=>n.media?.id===mediaItem.id);
   if(idx>=0){
@@ -229,47 +320,22 @@ export default function LessonEditor({value,onChange,disabled,demo=false}:{value
      emit();
     }
    }
-   return;
   }
-  // Fallback DOM move if nested inside a block
-  const el=Array.from(editor.current.querySelectorAll<HTMLElement>('[data-lesson-media]')).find(node=>{
-   try{return JSON.parse(node.dataset.lessonMedia||'{}').id===mediaItem.id}catch{return false}
-  });
-  if(!el||!el.parentElement)return;
-  const parent=el.parentElement;
-  if(direction==='up'&&el.previousElementSibling){
-   parent.insertBefore(el,el.previousElementSibling);
-  }else if(direction==='down'&&el.nextElementSibling){
-   parent.insertBefore(el,el.nextElementSibling.nextElementSibling);
-  }
-  emit();
  }
- async function saveMediaItem(){
+ function saveMediaItem(){
   if(!editor.current)return;
   if(mediaFormKind){
    setError('');
    const cleanUrl=linkUrl.trim();
    if(!mediaFile&&!cleanUrl){
-    setError(mediaFormKind==='audio'?'Välj en ljudfil eller klistra in en länk till ljudet.':mediaFormKind==='video'?'Välj en videofil eller klistra in en länk till filmen.':'Ange en webblänk (https://...).');
+    setError(mediaFormKind==='audio'?'Välj en ljudfil från datorn eller klistra in en länk till ljudet.':mediaFormKind==='video'?'Välj en filmfil från datorn eller klistra in en länk till filmen.':'Ange en webblänk (https://...).');
     return;
    }
    if(!mediaFile&&cleanUrl&&!validMediaUrl(cleanUrl)){
     setError('Ange en giltig webblänk som börjar med https:// eller http://');
     return;
    }
-   let uploadedFile=undefined;
-   if(mediaFile){
-    if(mediaFile.size>50*1024*1024){setError('Filen får vara högst 50 MB.');return}
-    setMediaBusy(mediaFormKind==='video'?'video':'audio');
-    try{
-     uploadedFile=await uploadMaterial(mediaFile,demo);
-    }catch(e){
-     setMediaBusy('');
-     setError(e instanceof Error?e.message:'Mediafilen kunde inte laddas upp.');
-     return;
-    }
-    setMediaBusy('');
-   }
+   const uploadedFile=mediaFile?storeDemoFileSync(mediaFile):undefined;
    const defaultLabel=mediaFile?mediaFile.name.replace(/\.[^.]+$/,''):(mediaFormKind==='audio'?'Ljudspår':mediaFormKind==='video'?'Filmspår':cleanUrl.slice(0,80));
    const cleanTitle=(linkTitle.trim()||defaultLabel).slice(0,200);
    const finalKind:'audio'|'video'|'embed'=uploadedFile?(mediaFormKind==='video'?'video':'audio'):(mediaFormKind==='audio'&&/\.(mp3|wav|ogg|m4a|aac|flac)(\?.*)?$/i.test(cleanUrl)?'audio':mediaFormKind==='video'&&/\.(mp4|webm|mov|m4v|ogv)(\?.*)?$/i.test(cleanUrl)?'video':mediaFormKind);
@@ -281,37 +347,25 @@ export default function LessonEditor({value,onChange,disabled,demo=false}:{value
     ...(cleanUrl?{url:cleanUrl}:{})
    };
    if(!insertMediaAtCursor(m)){setError('Lektionen har för många mediafiler.');return}
-   setMediaFormKind('');setMediaFile(null);setLinkUrl('');setLinkTitle('');setError('');
+   setMediaFormKind('');setMediaFile(null);setLinkUrl('');setLinkTitle('');setError('');setJustInsertedNotice('');
    if(audioInput.current)audioInput.current.value='';
    if(videoInput.current)videoInput.current.value='';
    return;
   }
   if(mediaItem){
    if(!mediaItem.title.trim()){setError('Ange en rubrik för knappen.');return}
-   let updatedMedia={...mediaItem};
+   let updatedMedia={...mediaItem,title:mediaItem.title.trim().slice(0,200)};
    if(mediaFile){
-    if(mediaFile.size>50*1024*1024){setError('Filen får vara högst 50 MB.');return}
-    setMediaBusy(mediaItem.kind==='video'?'video':'audio');
-    try{
-     const uploadedFile=await uploadMaterial(mediaFile,demo);
-     updatedMedia={...updatedMedia,file:uploadedFile};
-    }catch(e){
-     setMediaBusy('');
-     setError(e instanceof Error?e.message:'Mediafilen kunde inte laddas upp.');
-     return;
-    }
-    setMediaBusy('');
+    const uploadedFile=storeDemoFileSync(mediaFile);
+    updatedMedia={...updatedMedia,file:uploadedFile};
    }
    if(!updatedMedia.file&&!validMediaUrl(updatedMedia.url)){setError('Ange en giltig webblänk (https://...).');return}
-   const nodes=fromDOM(editor.current);
-   const update=(n:LessonNode):LessonNode=>n.media?.id===updatedMedia.id?{tag:'media',media:updatedMedia}:{...n,...(n.children?{children:n.children.map(update)}:{})};
-   const body=encodeLesson(nodes.map(update));
-   if(!validateLesson(body)){setError('Kunde inte spara ändringen.');return}
-   fill(editor.current,body);selection.current=null;emit();setMediaItem(null);setMediaFile(null);setError('');
+   if(!updateMediaInDOM(updatedMedia)){setError('Kunde inte spara ändringen.');return}
+   setMediaItem(null);setMediaFile(null);setError('');setJustInsertedNotice('');
   }
  }
- const locked=disabled||imageBusy||!!mediaBusy;
- return <div className="lesson-editor-shell"><div style={{display:'flex',justifyContent:'space-between',alignItems:'center',flexWrap:'wrap',gap:8,margin:'14px 0 6px'}}><p className="note" style={{margin:0,fontSize:12}}>Markera text och välj formatering. Bilder, ljudspår, filmspår och länkar infogas vid markören. Klicka på en bild, ett mediaspår eller en uppgift för att redigera eller ta bort.</p>{cursorHint&&<span className="badge" style={{fontSize:11,background:'rgba(124, 58, 237, 0.16)',color:'#c4b5fd'}}>📍 Infogar: {cursorHint}</span>}</div>
+ const locked=disabled||imageBusy;
+ return <div className="lesson-editor-shell"><div style={{display:'flex',justifyContent:'space-between',alignItems:'center',flexWrap:'wrap',gap:8,margin:'14px 0 6px'}}><p className="note" style={{margin:0,fontSize:12}}>Markera text och välj formatering. Bilder, ljudspår, filmspår och länkar infogas som en knapp där markören står. Klicka på en bild, en mediaknapp eller en uppgift för att redigera eller ta bort.</p>{cursorHint&&<span className="badge" style={{fontSize:11,background:'rgba(124, 58, 237, 0.16)',color:'#c4b5fd'}}>📍 Markör: {cursorHint}</span>}</div>
  <div className="lesson-toolbar" role="toolbar" aria-label="Formatera lektionstext" onMouseDown={e=>{if((e.target as HTMLElement).closest('button'))e.preventDefault()}}>
  {([['Fet','bold'],['Kursiv','italic'],['Understruken','underline'],['Punktlista','insertUnorderedList'],['Numrerad lista','insertOrderedList']] as const).map(([label,cmd])=><button key={cmd} type="button" className="light" disabled={locked} onClick={()=>command(cmd)}>{label}</button>)}
  <button type="button" className="light" disabled={locked} onClick={()=>command('formatBlock','h2')}>Rubrik</button><button type="button" className="light" disabled={locked} onClick={()=>command('formatBlock','p')}>Brödtext</button>
@@ -319,15 +373,15 @@ export default function LessonEditor({value,onChange,disabled,demo=false}:{value
  <button type="button" className="light" disabled={locked} onClick={()=>command('undo')}>Ångra</button><button type="button" className="light" disabled={locked} onClick={()=>command('redo')}>Gör om</button>
  <button type="button" disabled={locked} onClick={()=>{remember();imageInput.current?.click()}}>{imageBusy?'Läser bild…':'＋ Ladda upp bild'}</button>
  <button type="button" disabled={locked} onClick={()=>{remember();setError('');setOptions('');setGapFacit('');setExercise({id:crypto.randomUUID(),type:'gap',prompt:'Fyll i rätt svar på linjen:',options:[],correctOptions:[]})}}>＋ Interaktiv uppgift</button>
- <button type="button" disabled={locked} title="Lägg in ljudspår vid markören för uppspelning i webbläsaren" style={{display:'inline-flex',alignItems:'center',gap:6}} onClick={()=>{remember();setError('');setMediaItem(null);setMediaFile(null);setLinkUrl('');setLinkTitle('');setMediaFormKind(k=>k==='audio'?'':'audio')}}>
+ <button type="button" disabled={locked} title="Lägg in knapp för ljudspår vid markören för uppspelning i webbläsaren" style={{display:'inline-flex',alignItems:'center',gap:6}} onClick={()=>{remember();setError('');setJustInsertedNotice('');setMediaItem(null);setMediaFile(null);setLinkUrl('');setLinkTitle('');setMediaFormKind(k=>k==='audio'?'':'audio')}}>
   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></svg>
-  <span>{mediaBusy==='audio'?'Laddar ljud…':'Ljudspår'}</span>
+  <span>Ljudspår</span>
  </button>
- <button type="button" disabled={locked} title="Lägg in filmspår vid markören för uppspelning i webbläsaren" style={{display:'inline-flex',alignItems:'center',gap:6}} onClick={()=>{remember();setError('');setMediaItem(null);setMediaFile(null);setLinkUrl('');setLinkTitle('');setMediaFormKind(k=>k==='video'?'':'video')}}>
+ <button type="button" disabled={locked} title="Lägg in knapp för filmspår vid markören för uppspelning i webbläsaren" style={{display:'inline-flex',alignItems:'center',gap:6}} onClick={()=>{remember();setError('');setJustInsertedNotice('');setMediaItem(null);setMediaFile(null);setLinkUrl('');setLinkTitle('');setMediaFormKind(k=>k==='video'?'':'video')}}>
   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="2" y="3" width="20" height="18" rx="2.5"/><path d="M7 3v18M17 3v18M2 9h5M17 9h5M2 15h5M17 15h5"/><polygon points="10 9 15 12 10 15 10 9" fill="currentColor"/></svg>
-  <span>{mediaBusy==='video'?'Laddar film…':'Filmspår'}</span>
+  <span>Filmspår</span>
  </button>
- <button type="button" disabled={locked} title="Lägg in länk till film eller ljud på annan webbsida med uppspelning i webbläsaren" style={{display:'inline-flex',alignItems:'center',gap:6}} onClick={()=>{remember();setError('');setMediaItem(null);setMediaFile(null);setLinkUrl('');setLinkTitle('');setMediaFormKind(k=>k==='embed'?'':'embed')}}>
+ <button type="button" disabled={locked} title="Lägg in knapp för länk till film eller ljud på annan webbsida med uppspelning i webbläsaren" style={{display:'inline-flex',alignItems:'center',gap:6}} onClick={()=>{remember();setError('');setJustInsertedNotice('');setMediaItem(null);setMediaFile(null);setLinkUrl('');setLinkTitle('');setMediaFormKind(k=>k==='embed'?'':'embed')}}>
   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
   <span>Länk film / ljud</span>
  </button>
@@ -342,34 +396,42 @@ export default function LessonEditor({value,onChange,disabled,demo=false}:{value
  </>}
  </div>
  {(!!mediaFormKind||mediaItem)&&<section className="lesson-exercise" aria-label="Lägg in eller redigera media">
-  <h3>{mediaFormKind==='audio'?'🔊 Lägg in knapp för ljudspår vid markören':mediaFormKind==='video'?'🎬 Lägg in knapp för filmspår vid markören':mediaFormKind==='embed'?'🔗 Lägg in knapp för länk till film eller ljud vid markören':mediaItem?.kind==='audio'?'🔊 Redigera ljudknapp':mediaItem?.kind==='video'?'🎬 Redigera filmknapp':'🔗 Redigera länkknapp'}</h3>
-  <p className="muted" style={{fontSize:12,margin:'0 0 10px'}}>Knappen placeras där markören står i redigeraren ({cursorHint||'vid aktuell rad'}) och spelas upp direkt i elevens webbläsare.</p>
+  <h3>{mediaFormKind==='audio'?'🔊 Lägg in knapp för ljudspår vid markören':mediaFormKind==='video'?'🎬 Lägg in knapp för filmspår vid markören':mediaFormKind==='embed'?'🔗 Lägg in knapp för länk till film eller ljud vid markören':mediaItem?.kind==='audio'?'🔊 Ljudknapp vid markören':mediaItem?.kind==='video'?'🎬 Filmknapp vid markören':'🔗 Länkknapp vid markören'}</h3>
+  <p className="muted" style={{fontSize:12,margin:'0 0 10px'}}>Knappen placeras exakt där markören står i redigeraren ({cursorHint||'vid aktuell rad'}) och spelas upp direkt i webbläsaren på färdig sida.</p>
+  {justInsertedNotice&&<p role="status" className="success" style={{margin:'0 0 12px',fontSize:13}}>{justInsertedNotice}</p>}
   <label>Knapptext / Rubrik
-   <input type="text" maxLength={200} placeholder={mediaFormKind==='audio'?'T.ex. Spår 01 – Lyssna här':mediaFormKind==='video'?'T.ex. Se filmen – Berlinmuren':'T.ex. Spela upp i webbläsaren'} value={mediaFormKind?linkTitle:(mediaItem?.title||'')} onChange={e=>mediaFormKind?setLinkTitle(e.target.value):setMediaItem(m=>m?{...m,title:e.target.value}:null)}/>
+   <input type="text" maxLength={200} placeholder={mediaFormKind==='audio'?'T.ex. Spår 01 – Lyssna här':mediaFormKind==='video'?'T.ex. Se filmen – Berlinmuren':'T.ex. Spela upp i webbläsaren'} value={mediaFormKind?linkTitle:(mediaItem?.title||'')} onChange={e=>{if(mediaFormKind){setLinkTitle(e.target.value)}else if(mediaItem){const next={...mediaItem,title:e.target.value};setMediaItem(next);if(e.target.value.trim())updateMediaInDOM({...next,title:e.target.value.trim()})}}}/>
   </label>
-  {(mediaFormKind==='audio'||mediaFormKind==='video'||mediaItem?.kind==='audio'||mediaItem?.kind==='video')&&<div style={{margin:'10px 0'}}>
-   <label style={{marginBottom:6}}>{(mediaFormKind==='audio'||mediaItem?.kind==='audio')?'Välj ljudfil från din dator (MP3, WAV, M4A, OGG)':'Välj videofil från din dator (MP4, WebM, MOV)'}</label>
+  {(mediaFormKind==='audio'||mediaFormKind==='video'||mediaItem?.kind==='audio'||mediaItem?.kind==='video')&&<div style={{margin:'12px 0',padding:'12px 14px',borderRadius:10,border:'1px dashed rgba(139, 92, 246, 0.5)',background:'rgba(124, 58, 237, 0.08)'}}>
+   <label style={{margin:'0 0 8px',fontWeight:600}}>{(mediaFormKind==='audio'||mediaItem?.kind==='audio')?'1. Välj ljudfil från datorn (MP3, WAV, M4A, OGG, AAC) – infogar knapp direkt vid markören:':'1. Välj filmfil från datorn (MP4, MOV, WebM, M4V) – infogar knapp direkt vid markören:'}</label>
    <div style={{display:'flex',alignItems:'center',gap:10,flexWrap:'wrap'}}>
-    <button type="button" className="light" disabled={locked} onClick={()=>{const isAud=mediaFormKind==='audio'||mediaItem?.kind==='audio';const inp=(isAud?audioInput:videoInput).current;if(inp){inp.value='';inp.click()}}}>
-     {mediaFile||mediaItem?.file?'Byt fil…':(mediaFormKind==='audio'||mediaItem?.kind==='audio')?'📂 Välj ljudfil…':'📂 Välj filmfil…'}
+    <button type="button" disabled={locked} onClick={()=>{const isAud=mediaFormKind==='audio'||mediaItem?.kind==='audio';const inp=(isAud?audioInput:videoInput).current;if(inp){inp.value='';inp.click()}}}>
+     {mediaFile||mediaItem?.file?'📂 Byt fil från datorn…':(mediaFormKind==='audio'||mediaItem?.kind==='audio')?'📂 Välj ljudfil och lägg in vid markören…':'📂 Välj filmfil och lägg in vid markören…'}
     </button>
-    {mediaFile?<span className="badge" style={{background:'rgba(22, 163, 74, 0.2)',color:'#86efac'}}>✓ Vald fil: {mediaFile.name} ({Math.max(1,Math.round(mediaFile.size/1024))} kB)</span>:mediaItem?.file?<span className="badge" style={{background:'rgba(22, 163, 74, 0.2)',color:'#86efac'}}>✓ Sparad fil: {mediaItem.file.name}</span>:null}
+    {mediaFile?<span className="badge" style={{background:'rgba(22, 163, 74, 0.2)',color:'#86efac'}}>✓ Vald fil: {mediaFile.name} ({Math.max(1,Math.round(mediaFile.size/1024))} kB)</span>:mediaItem?.file?<span className="badge" style={{background:'rgba(22, 163, 74, 0.2)',color:'#86efac'}}>✓ Kopplad fil: {mediaItem.file.name} ({Math.max(1,Math.round(mediaItem.file.size/1024))} kB)</span>:null}
    </div>
   </div>}
-  {(mediaFormKind||!mediaItem?.file)&&<label>{mediaFormKind==='audio'?'Eller klistra in länk till ljud på webben (valfritt om du valt fil ovan)':mediaFormKind==='video'?'Eller klistra in länk till film på webben (YouTube, Vimeo, MP4 – valfritt om du valt fil ovan)':'Webblänk (URL till film eller ljud på annan webbsida)'}
+  {(mediaFormKind||!mediaItem?.file)&&<label>{mediaFormKind==='audio'?'2. Eller klistra in webblänk till ljudspår (t.ex. Sveriges Radio, Spotify, SoundCloud, MP3-länk)':mediaFormKind==='video'?'2. Eller klistra in webblänk till film (t.ex. YouTube, Vimeo, MP4-länk)':'Webblänk (URL till film eller ljud på annan webbsida)'}
    <input type="url" maxLength={2000} placeholder="https://www.youtube.com/watch?v=... eller https://sverigesradio.se/..." value={mediaFormKind?linkUrl:(mediaItem?.url||'')} onChange={e=>mediaFormKind?setLinkUrl(e.target.value):setMediaItem(m=>m?{...m,url:e.target.value}:null)}/>
   </label>}
+  {mediaItem&&<div style={{margin:'12px 0',padding:'10px 12px',borderRadius:10,background:'rgba(15, 23, 42, 0.45)',border:'1px solid rgba(139, 92, 246, 0.28)'}}>
+   <small className="muted" style={{display:'block',marginBottom:6}}>Förhandsvisning av knappen (klicka för att provspela direkt här):</small>
+   <LessonMediaPlayer media={mediaItem}/>
+  </div>}
   <div className="row" style={{marginTop:10,flexWrap:'wrap',gap:8}}>
-   <button type="button" disabled={locked} onClick={saveMediaItem}>{mediaFormKind?'Lägg in knapp vid markören':'Spara ändring'}</button>
+   <button type="button" disabled={locked} onClick={saveMediaItem}>{mediaFormKind?'Lägg in knapp vid markören':'✓ Klar'}</button>
    {mediaItem&&<>
     <button type="button" className="light" disabled={locked} title="Flytta mediaknapp uppåt" onClick={()=>moveSelectedMedia('up')}>↑ Flytta upp</button>
     <button type="button" className="light" disabled={locked} title="Flytta mediaknapp nedåt" onClick={()=>moveSelectedMedia('down')}>↓ Flytta ner</button>
    </>}
-   <button type="button" className="light" onClick={()=>{setMediaFormKind('');setMediaFile(null);setMediaItem(null)}}>Avbryt</button>
-   {mediaItem&&<button type="button" className="light" style={{color:'#a33232'}} disabled={locked} onClick={()=>{const remove=(nodes:LessonNode[]):LessonNode[]=>nodes.filter(n=>n.media?.id!==mediaItem.id).map(n=>({...n,...(n.children?{children:remove(n.children)}:{})}));if(editor.current){fill(editor.current,encodeLesson(remove(fromDOM(editor.current))));emit()}setMediaItem(null)}}>Ta bort knapp</button>}
+   <button type="button" className="light" onClick={()=>{setMediaFormKind('');setMediaFile(null);setMediaItem(null);setJustInsertedNotice('')}}>Stäng</button>
+   {mediaItem&&<button type="button" className="light" style={{color:'#a33232'}} disabled={locked} onClick={()=>{const pill=Array.from(editor.current?.querySelectorAll<HTMLElement>('[data-lesson-media]')||[]).find(node=>{try{return JSON.parse(node.dataset.lessonMedia||'{}').id===mediaItem.id}catch{return false}});if(pill){pill.remove();emit()}else if(editor.current){const remove=(nodes:LessonNode[]):LessonNode[]=>nodes.filter(n=>n.media?.id!==mediaItem.id).map(n=>({...n,...(n.children?{children:remove(n.children)}:{})}));fill(editor.current,encodeLesson(remove(fromDOM(editor.current))));emit()}setMediaItem(null);setJustInsertedNotice('')}}>Ta bort knapp</button>}
   </div>
  </section>}
- {exercise&&<section className="lesson-exercise" aria-label="Redigera uppgift"><h3>Uppgift / Fråga</h3><label>Instruktion / Fråga<textarea value={exercise.prompt} maxLength={2000} onChange={e=>setExercise({...exercise,prompt:e.target.value})}/></label><label>Svarstyp<select value={exercise.type} onChange={e=>setExercise({...exercise,type:e.target.value as Exercise['type']})}><option value="gap">Interaktiv lucktext / linje i mening (arbetsbok)</option><option value="choice">Kryssa i alternativ (flervalsfrågor)</option><option value="text">Skriva i öppet textfält</option><option value="table">Interaktiv ordlista / tabell</option></select></label>{exercise.type==='gap'&&<><label>Meningar / linjer – en per rad (använd ____ eller [blank] för lucka)<textarea value={options} placeholder={'1 heter/Berlin/Tysklands huvudstad ____\n2 slutade/andra världskriget/1945 ____\n3 Människor bodde i Östberlin ____ jobbade i Västberlin.'} rows={6} onChange={e=>setOptions(e.target.value)}/></label><label>Facit för varje rad (valfritt – motsvarande rad, tillåt flera varianter med |)<textarea value={gapFacit} placeholder={'Berlin heter Tysklands huvudstad\nAndra världskriget slutade 1945\nmen'} rows={4} onChange={e=>setGapFacit(e.target.value)}/></label></>}{exercise.type==='choice'&&<><label>Alternativ – ett per rad<textarea value={options} placeholder={'Alternativ 1\nAlternativ 2'} onChange={e=>setOptions(e.target.value)}/></label>{parsedOptions.length>=2&&<div style={{margin:'14px 0'}}><label style={{marginBottom:6}}>Facit för självrättning (valfritt – kryssa i rätt svar)</label><p className="muted" style={{fontSize:12,margin:'0 0 8px'}}>Om du markerar rätt alternativ rättas frågan automatiskt när eleven lämnar in. Facit döljs alltid för eleven tills arbetet är inlämnat.</p>{parsedOptions.map(opt=>{const checked=(exercise.correctOptions||[]).includes(opt);return <label className="lesson-option" key={opt} style={{margin:0}}><input type="checkbox" checked={checked} onChange={e=>{const prev=(exercise.correctOptions||[]).filter(c=>parsedOptions.includes(c));setExercise({...exercise,correctOptions:e.target.checked?[...prev,opt]:prev.filter(c=>c!==opt)})}}/><span>{opt} {checked&&<span className="badge" style={{marginLeft:6,background:'#2d5c40',color:'#fff'}}>Rätt svar</span>}</span></label>})}</div>}</>}<div className="row" style={{flexWrap:'wrap',gap:8}}><button type="button" disabled={locked} onClick={saveExercise}>Spara uppgift</button><button type="button" className="light" disabled={locked} title="Infoga ljudspår ovanför denna uppgift" onClick={()=>{const el=Array.from(editor.current?.querySelectorAll<HTMLElement>('[data-lesson-exercise]')||[]).find(node=>{try{return JSON.parse(node.dataset.lessonExercise||'{}').id===exercise.id}catch{return false}});if(el)anchorTarget.current={el,position:'before'};setMediaFile(null);setLinkTitle('');setLinkUrl('');setMediaFormKind('audio')}}>🔊 Lägg ljudspår vid denna uppgift</button><button type="button" className="light" disabled={locked} title="Infoga filmspår ovanför denna uppgift" onClick={()=>{const el=Array.from(editor.current?.querySelectorAll<HTMLElement>('[data-lesson-exercise]')||[]).find(node=>{try{return JSON.parse(node.dataset.lessonExercise||'{}').id===exercise.id}catch{return false}});if(el)anchorTarget.current={el,position:'before'};setMediaFile(null);setLinkTitle('');setLinkUrl('');setMediaFormKind('video')}}>🎬 Lägg filmspår vid denna uppgift</button><button type="button" className="light" disabled={locked} title="Infoga länk till film/ljud ovanför denna uppgift" onClick={()=>{const el=Array.from(editor.current?.querySelectorAll<HTMLElement>('[data-lesson-exercise]')||[]).find(node=>{try{return JSON.parse(node.dataset.lessonExercise||'{}').id===exercise.id}catch{return false}});if(el)anchorTarget.current={el,position:'before'};setMediaFile(null);setLinkTitle('');setLinkUrl('');setMediaFormKind('embed')}}>🔗 Lägg medielänk vid denna uppgift</button><button type="button" className="light" onClick={()=>setExercise(null)}>Avbryt</button><button type="button" className="light" disabled={locked} onClick={()=>{const remove=(nodes:LessonNode[]):LessonNode[]=>nodes.filter(n=>n.exercise?.id!==exercise.id).map(n=>({...n,...(n.children?{children:remove(n.children)}:{})}));if(editor.current){fill(editor.current,encodeLesson(remove(fromDOM(editor.current))));emit()}setExercise(null)}}>Ta bort uppgift</button></div></section>}<input ref={imageInput} type="file" accept="image/jpeg,image/png,image/webp" hidden onChange={e=>{const file=e.target.files?.[0];if(file)upload(file)}}/><input ref={audioInput} type="file" accept="audio/*,.mp3,.wav,.m4a,.ogg,.aac,.flac" hidden onChange={e=>{const file=e.target.files?.[0];if(file){setMediaFile(file);const cleanName=file.name.replace(/\.[^.]+$/,'').slice(0,120);if(mediaFormKind&&!linkTitle.trim())setLinkTitle(cleanName);if(mediaItem&&!mediaItem.title.trim())setMediaItem({...mediaItem,title:cleanName})}}}/><input ref={videoInput} type="file" accept="video/*,.mp4,.webm,.mov,.m4v" hidden onChange={e=>{const file=e.target.files?.[0];if(file){setMediaFile(file);const cleanName=file.name.replace(/\.[^.]+$/,'').slice(0,120);if(mediaFormKind&&!linkTitle.trim())setLinkTitle(cleanName);if(mediaItem&&!mediaItem.title.trim())setMediaItem({...mediaItem,title:cleanName})}}}/>
- <div ref={editor} id="lesson-body" role="textbox" aria-label="Lektionstext" aria-multiline="true" aria-disabled={locked} className="builder-editor lesson-content rich-lesson-editor" contentEditable={!locked} suppressContentEditableWarning onInput={emit} onKeyUp={remember} onMouseUp={remember} onBlur={remember} onClick={e=>{const item=(e.target as HTMLElement).closest<HTMLElement>('[data-lesson-exercise]');if(item){anchorTarget.current={el:item,position:'before'};setCursorHint(`Ovanför: "${(item.textContent||'').replace(/^✎\s*/,'').split('·')[0].trim().slice(0,35)}"`);try{const q=JSON.parse(item.dataset.lessonExercise!);if(validExercise(q)){setExercise(q);setOptions(q.options.join('\n'));setGapFacit(q.correctOptions?.join('\n')||'');setMediaItem(null);setMediaFormKind('')}}catch{}}const mItem=(e.target as HTMLElement).closest<HTMLElement>('[data-lesson-media]');if(mItem){anchorTarget.current={el:mItem,position:'after'};setCursorHint(`Under: "${(mItem.textContent||'').split('·')[1]?.trim().slice(0,35)||'mediaspår'}"`);try{const m=JSON.parse(mItem.dataset.lessonMedia!);if(validLessonMedia(m)){setMediaItem(m);setMediaFormKind('');setExercise(null)}}catch{}}const img=(e.target as HTMLElement).closest('img');selectedImage.current=img as HTMLImageElement|null;setHasImage(!!img)}} onPaste={e=>{e.preventDefault();command('insertText',e.clipboardData.getData('text/plain'))}} onDrop={e=>{e.preventDefault();setError('Använd knapparna i verktygsfältet för att lägga in bild, ljud eller film.')}}/>
+ {exercise&&<section className="lesson-exercise" aria-label="Redigera uppgift"><h3>Uppgift / Fråga</h3><label>Instruktion / Fråga<textarea value={exercise.prompt} maxLength={2000} onChange={e=>setExercise({...exercise,prompt:e.target.value})}/></label><label>Svarstyp<select value={exercise.type} onChange={e=>setExercise({...exercise,type:e.target.value as Exercise['type']})}><option value="gap">Interaktiv lucktext / linje i mening (arbetsbok)</option><option value="choice">Kryssa i alternativ (flervalsfrågor)</option><option value="text">Skriva i öppet textfält</option><option value="table">Interaktiv ordlista / tabell</option></select></label>{exercise.type==='gap'&&<><label>Meningar / linjer – en per rad (använd ____ eller [blank] för lucka)<textarea value={options} placeholder={'1 heter/Berlin/Tysklands huvudstad ____\n2 slutade/andra världskriget/1945 ____\n3 Människor bodde i Östberlin ____ jobbade i Västberlin.'} rows={6} onChange={e=>setOptions(e.target.value)}/></label><label>Facit för varje rad (valfritt – motsvarande rad, tillåt flera varianter med |)<textarea value={gapFacit} placeholder={'Berlin heter Tysklands huvudstad\nAndra världskriget slutade 1945\nmen'} rows={4} onChange={e=>setGapFacit(e.target.value)}/></label></>}{exercise.type==='choice'&&<><label>Alternativ – ett per rad<textarea value={options} placeholder={'Alternativ 1\nAlternativ 2'} onChange={e=>setOptions(e.target.value)}/></label>{parsedOptions.length>=2&&<div style={{margin:'14px 0'}}><label style={{marginBottom:6}}>Facit för självrättning (valfritt – kryssa i rätt svar)</label><p className="muted" style={{fontSize:12,margin:'0 0 8px'}}>Om du markerar rätt alternativ rättas frågan automatiskt när eleven lämnar in. Facit döljs alltid för eleven tills arbetet är inlämnat.</p>{parsedOptions.map(opt=>{const checked=(exercise.correctOptions||[]).includes(opt);return <label className="lesson-option" key={opt} style={{margin:0}}><input type="checkbox" checked={checked} onChange={e=>{const prev=(exercise.correctOptions||[]).filter(c=>parsedOptions.includes(c));setExercise({...exercise,correctOptions:e.target.checked?[...prev,opt]:prev.filter(c=>c!==opt)})}}/><span>{opt} {checked&&<span className="badge" style={{marginLeft:6,background:'#2d5c40',color:'#fff'}}>Rätt svar</span>}</span></label>})}</div>}</>}<div className="row" style={{flexWrap:'wrap',gap:8}}><button type="button" disabled={locked} onClick={saveExercise}>Spara uppgift</button><button type="button" className="light" disabled={locked} title="Infoga ljudspår ovanför denna uppgift" onClick={()=>{const el=Array.from(editor.current?.querySelectorAll<HTMLElement>('[data-lesson-exercise]')||[]).find(node=>{try{return JSON.parse(node.dataset.lessonExercise||'{}').id===exercise.id}catch{return false}});if(el)anchorTarget.current={el,position:'before'};setMediaFile(null);setLinkTitle('');setLinkUrl('');setJustInsertedNotice('');setMediaFormKind('audio')}}>🔊 Lägg ljudspår vid denna uppgift</button><button type="button" className="light" disabled={locked} title="Infoga filmspår ovanför denna uppgift" onClick={()=>{const el=Array.from(editor.current?.querySelectorAll<HTMLElement>('[data-lesson-exercise]')||[]).find(node=>{try{return JSON.parse(node.dataset.lessonExercise||'{}').id===exercise.id}catch{return false}});if(el)anchorTarget.current={el,position:'before'};setMediaFile(null);setLinkTitle('');setLinkUrl('');setJustInsertedNotice('');setMediaFormKind('video')}}>🎬 Lägg filmspår vid denna uppgift</button><button type="button" className="light" disabled={locked} title="Infoga länk till film/ljud ovanför denna uppgift" onClick={()=>{const el=Array.from(editor.current?.querySelectorAll<HTMLElement>('[data-lesson-exercise]')||[]).find(node=>{try{return JSON.parse(node.dataset.lessonExercise||'{}').id===exercise.id}catch{return false}});if(el)anchorTarget.current={el,position:'before'};setMediaFile(null);setLinkTitle('');setLinkUrl('');setJustInsertedNotice('');setMediaFormKind('embed')}}>🔗 Lägg medielänk vid denna uppgift</button><button type="button" className="light" onClick={()=>setExercise(null)}>Avbryt</button><button type="button" className="light" disabled={locked} onClick={()=>{const remove=(nodes:LessonNode[]):LessonNode[]=>nodes.filter(n=>n.exercise?.id!==exercise.id).map(n=>({...n,...(n.children?{children:remove(n.children)}:{})}));if(editor.current){fill(editor.current,encodeLesson(remove(fromDOM(editor.current))));emit()}setExercise(null)}}>Ta bort uppgift</button></div></section>}
+ <input ref={imageInput} type="file" accept="image/jpeg,image/png,image/webp" hidden style={{display:'none'}} onChange={e=>{const file=e.target.files?.[0];if(file)upload(file)}}/>
+ <input ref={audioInput} type="file" accept="audio/*,.mp3,.wav,.m4a,.ogg,.aac,.flac" hidden style={{display:'none'}} onChange={e=>{const file=e.target.files?.[0];if(file){handleMediaFileSelected(file,'audio');e.target.value=''}}}/>
+ <input ref={videoInput} type="file" accept="video/*,.mp4,.webm,.mov,.m4v" hidden style={{display:'none'}} onChange={e=>{const file=e.target.files?.[0];if(file){handleMediaFileSelected(file,'video');e.target.value=''}}}/>
+ <div ref={editor} id="lesson-body" role="textbox" aria-label="Lektionstext" aria-multiline="true" aria-disabled={locked} className="builder-editor lesson-content rich-lesson-editor" contentEditable={!locked} suppressContentEditableWarning onInput={emit} onKeyUp={remember} onMouseUp={remember} onSelect={remember} onClick={e=>{const item=(e.target as HTMLElement).closest<HTMLElement>('[data-lesson-exercise]');if(item){anchorTarget.current={el:item,position:'before'};setCursorHint(`Ovanför: "${(item.textContent||'').replace(/^✎\s*/,'').split('·')[0].trim().slice(0,35)}"`);try{const q=JSON.parse(item.dataset.lessonExercise!);if(validExercise(q)){setExercise(q);setOptions(q.options.join('\n'));setGapFacit(q.correctOptions?.join('\n')||'');setMediaItem(null);setMediaFormKind('');setJustInsertedNotice('')}}catch{}}const mItem=(e.target as HTMLElement).closest<HTMLElement>('[data-lesson-media]');if(mItem){anchorTarget.current={el:mItem,position:'after'};setCursorHint(`Efter knappen: "${(mItem.textContent||'').trim().slice(0,35)}"`);try{const m=JSON.parse(mItem.dataset.lessonMedia!);if(validLessonMedia(m)){setMediaItem(m);setMediaFormKind('');setExercise(null);setJustInsertedNotice('')}}catch{}}const img=(e.target as HTMLElement).closest('img');selectedImage.current=img as HTMLImageElement|null;setHasImage(!!img)}} onPaste={e=>{e.preventDefault();command('insertText',e.clipboardData.getData('text/plain'))}} onDrop={e=>{e.preventDefault();setError('Använd knapparna i verktygsfältet för att lägga in bild, ljud eller film.')}}/>
  {error&&<p role="alert" className="error">{error}</p>}</div>
 }

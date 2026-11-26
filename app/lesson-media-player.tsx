@@ -1,6 +1,6 @@
 'use client';
-import { useEffect, useState } from 'react';
-import { readDemoFile } from './lesson-files';
+import { useEffect, useRef, useState } from 'react';
+import { getImmediateDemoFileUrl, readDemoFile } from './lesson-files';
 import type { LessonMedia } from './lesson-format';
 
 function parseExternalEmbed(rawUrl: string): {
@@ -87,42 +87,64 @@ function parseExternalEmbed(rawUrl: string): {
 }
 
 export default function LessonMediaPlayer({ media }: { media: LessonMedia }) {
-  const [blobUrl, setBlobUrl] = useState('');
+  const [blobUrl, setBlobUrl] = useState(() => (media.file ? getImmediateDemoFileUrl(media.file.id) : ''));
   const [error, setError] = useState('');
   const [open, setOpen] = useState(false);
+  const audioRef = useRef<HTMLAudioElement>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
 
   useEffect(() => {
-    if (!media.file?.demo) return;
+    if (!media.file) {
+      setBlobUrl('');
+      setError('');
+      return;
+    }
+    const immediate = getImmediateDemoFileUrl(media.file.id);
+    if (immediate) {
+      setBlobUrl(immediate);
+      setError('');
+      return;
+    }
     let disposed = false;
-    let localUrl = '';
-    setBlobUrl('');
     setError('');
     readDemoFile(media.file.id).then(
-      blob => {
+      () => {
         if (disposed) return;
-        const viewWin = document.defaultView || window;
-        localUrl = viewWin.URL.createObjectURL(blob);
-        setBlobUrl(localUrl);
+        const resolvedUrl = getImmediateDemoFileUrl(media.file!.id);
+        if (resolvedUrl) {
+          setBlobUrl(resolvedUrl);
+        } else if (!media.file?.demo) {
+          setBlobUrl('/api/lesson-files/' + media.file!.id);
+        }
       },
       e => {
-        if (!disposed) setError(e instanceof Error ? e.message : 'Mediafilen kunde inte laddas.');
+        if (disposed) return;
+        if (!media.file?.demo) {
+          setBlobUrl('/api/lesson-files/' + media.file!.id);
+        } else {
+          setError(e instanceof Error ? e.message : 'Mediafilen kunde inte laddas.');
+        }
       }
     );
     return () => {
       disposed = true;
-      if (localUrl) {
-        try {
-          (document.defaultView || window).URL.revokeObjectURL(localUrl);
-        } catch {}
-      }
     };
   }, [media.file?.id, media.file?.demo]);
 
   const fileSrc = media.file
-    ? media.file.demo
-      ? blobUrl
-      : '/api/lesson-files/' + media.file.id
+    ? blobUrl || getImmediateDemoFileUrl(media.file.id) || (!media.file.demo ? '/api/lesson-files/' + media.file.id : '')
     : media.url || '';
+
+  useEffect(() => {
+    if (!open || !fileSrc) return;
+    if (media.file) {
+      if (media.kind === 'video') {
+        videoRef.current?.play().catch(() => {});
+      } else {
+        audioRef.current?.play().catch(() => {});
+      }
+    }
+  }, [open, fileSrc, media.file, media.kind]);
 
   return (
     <span className="lesson-media-inline-wrapper" style={{ display: 'inline-block', verticalAlign: 'middle', margin: '4px 6px' }}>
@@ -171,7 +193,7 @@ export default function LessonMediaPlayer({ media }: { media: LessonMedia }) {
       </button>
 
       {open && (
-        <div
+        <span
           className="lesson-media-popover"
           style={{
             display: 'block',
@@ -181,14 +203,14 @@ export default function LessonMediaPlayer({ media }: { media: LessonMedia }) {
             borderRadius: 12,
             border: '1px solid rgba(139, 92, 246, 0.35)',
             background: 'rgba(15, 23, 42, 0.92)',
-            minWidth: 280,
+            minWidth: 300,
             maxWidth: 560,
             boxShadow: '0 8px 24px rgba(0,0,0,0.28)'
           }}
         >
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 8 }}>
+          <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 8 }}>
             <strong style={{ fontSize: 13, color: '#e2e8f0' }}>{media.title}</strong>
-            <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+            <span style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
               {media.url && (
                 <a
                   href={media.url}
@@ -207,29 +229,34 @@ export default function LessonMediaPlayer({ media }: { media: LessonMedia }) {
               >
                 Stäng ✕
               </button>
-            </div>
-          </div>
+            </span>
+          </span>
 
           {media.file ? (
-            media.file.demo && !fileSrc && !error ? (
-              <p className="muted" style={{ margin: 0, fontSize: 12 }}>Förbereder {media.kind === 'video' ? 'filmspår' : 'ljudspår'}…</p>
+            !fileSrc && !error ? (
+              <span className="muted" style={{ display: 'block', margin: 0, fontSize: 12 }}>
+                Förbereder {media.kind === 'video' ? 'filmspår' : 'ljudspår'}…
+              </span>
             ) : media.kind === 'video' ? (
               <video
+                ref={videoRef}
                 controls
                 autoPlay
-                preload="metadata"
+                playsInline
+                preload="auto"
                 src={fileSrc}
-                style={{ width: '100%', maxHeight: 380, borderRadius: 8, background: '#000', display: 'block' }}
+                style={{ width: '100%', minWidth: 280, maxHeight: 380, borderRadius: 8, background: '#000', display: 'block' }}
               >
                 Din webbläsare stödjer inte videouppspelning.
               </video>
             ) : (
               <audio
+                ref={audioRef}
                 controls
                 autoPlay
-                preload="metadata"
+                preload="auto"
                 src={fileSrc}
-                style={{ width: '100%', display: 'block' }}
+                style={{ width: '100%', minWidth: 280, minHeight: 42, display: 'block' }}
               >
                 Din webbläsare stödjer inte ljuduppspelning.
               </audio>
@@ -238,17 +265,17 @@ export default function LessonMediaPlayer({ media }: { media: LessonMedia }) {
             const parsed = parseExternalEmbed(media.url);
             if (parsed.embedType === 'audio' || (media.kind === 'audio' && parsed.embedType !== 'iframe')) {
               return (
-                <audio controls autoPlay preload="metadata" src={parsed.src} style={{ width: '100%', display: 'block' }} />
+                <audio controls autoPlay preload="auto" src={parsed.src} style={{ width: '100%', minWidth: 280, minHeight: 42, display: 'block' }} />
               );
             }
             if (parsed.embedType === 'video') {
               return (
-                <video controls autoPlay preload="metadata" src={parsed.src} style={{ width: '100%', maxHeight: 380, borderRadius: 8, background: '#000', display: 'block' }} />
+                <video controls autoPlay playsInline preload="auto" src={parsed.src} style={{ width: '100%', minWidth: 280, maxHeight: 380, borderRadius: 8, background: '#000', display: 'block' }} />
               );
             }
             const isAudioEmbed = media.kind === 'audio' || parsed.provider === 'SoundCloud' || parsed.provider === 'Spotify' || parsed.provider === 'Sveriges Radio';
             return (
-              <div style={{ width: '100%', borderRadius: 8, overflow: 'hidden', background: '#000' }}>
+              <span style={{ display: 'block', width: '100%', borderRadius: 8, overflow: 'hidden', background: '#000' }}>
                 <iframe
                   src={parsed.src}
                   title={media.title}
@@ -258,12 +285,12 @@ export default function LessonMediaPlayer({ media }: { media: LessonMedia }) {
                   allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; fullscreen"
                   allowFullScreen
                 />
-              </div>
+              </span>
             );
           })() : null}
 
-          {error && <p role="alert" className="error" style={{ marginTop: 6, fontSize: 12 }}>{error}</p>}
-        </div>
+          {error && <span role="alert" className="error" style={{ display: 'block', marginTop: 6, fontSize: 12 }}>{error}</span>}
+        </span>
       )}
     </span>
   );
