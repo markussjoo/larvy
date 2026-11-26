@@ -1,4 +1,5 @@
 import LessonFileLink from './lesson-file-link';
+import LessonMediaPlayer from './lesson-media-player';
 import { createElement, useState } from 'react';
 import { parseLesson, matchesExpectedAnswer, type LessonNode, type Answers, type Exercise } from './lesson-format';
 
@@ -365,6 +366,8 @@ export default function LessonContent({
       ? n.text
       : n.tag === 'file'
       ? <LessonFileLink key={key} file={n.file!} />
+      : n.tag === 'media' && n.media
+      ? <LessonMediaPlayer key={key} media={n.media} />
       : n.tag === 'img'
       ? <img key={key} src={n.src} alt={n.alt || ''} />
       : createElement(

@@ -15,5 +15,7 @@ export async function GET(req:Request,{params}:{params:Promise<{id:string}>}){
  }
  const object=await env.BUCKET.get('lesson-files/'+id);if(!object)return missing();
  const encodedName=file.customMetadata.name||'fil';
- return new Response(object.body,{headers:{'Content-Type':'application/octet-stream','Content-Disposition':`attachment; filename="download"; filename*=UTF-8''${encodedName.replace(/'/g,'%27')}`,'Content-Length':String(object.size),'X-Content-Type-Options':'nosniff','Content-Security-Policy':"sandbox; default-src 'none'",'Cache-Control':'private, no-store'}});
+ const mime=file.customMetadata.mime||object.httpMetadata?.contentType||'application/octet-stream';
+ const isMedia=/^(audio|video)\/[a-zA-Z0-9.+-]+$/.test(mime);
+ return new Response(object.body,{headers:{'Content-Type':isMedia?mime:'application/octet-stream','Content-Disposition':`${isMedia?'inline':'attachment'}; filename="download"; filename*=UTF-8''${encodedName.replace(/'/g,'%27')}`,'Content-Length':String(object.size),'X-Content-Type-Options':'nosniff','Content-Security-Policy':"sandbox; default-src 'none'; media-src 'self'",'Cache-Control':'private, no-store'}});
 }

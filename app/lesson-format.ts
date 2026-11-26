@@ -193,6 +193,34 @@ export function stripAnswerKey(body:string):string{
   return encodeLesson(nodes.map(clean));
 }
 
+export type LessonMedia = {
+  id: string;
+  kind: 'audio' | 'video' | 'embed';
+  title: string;
+  file?: LessonFile;
+  url?: string;
+};
+
+export function validMediaUrl(url: unknown): url is string {
+  if (typeof url !== 'string' || url.length < 8 || url.length > 2000) return false;
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === 'https:' || parsed.protocol === 'http:';
+  } catch {
+    return false;
+  }
+}
+
+export function validLessonMedia(m: any): m is LessonMedia {
+  if (!m || typeof m !== 'object') return false;
+  if (typeof m.id !== 'string' || !/^[a-zA-Z0-9_-]{1,80}$/.test(m.id)) return false;
+  if (!['audio', 'video', 'embed'].includes(m.kind)) return false;
+  if (typeof m.title !== 'string' || !m.title.trim() || m.title.length > 300) return false;
+  if (m.file !== undefined && !validLessonFile(m.file)) return false;
+  if (m.url !== undefined && !validMediaUrl(m.url)) return false;
+  return !!m.file || !!m.url;
+}
+
 export type LessonNode={
   tag:string;
   text?:string;
@@ -201,11 +229,12 @@ export type LessonNode={
   src?:string;
   alt?:string;
   file?:LessonFile;
+  media?:LessonMedia;
   exercise?:Exercise;
 };
 
 const tags=new Set([
-  'p','div','br','strong','b','em','i','u','s','h2','h3','ul','ol','li','blockquote','span','font','img','figure','figcaption','file','exercise',
+  'p','div','br','strong','b','em','i','u','s','h2','h3','ul','ol','li','blockquote','span','font','img','figure','figcaption','file','media','exercise',
   'table','thead','tbody','tr','th','td'
 ]);
 
@@ -215,7 +244,7 @@ export function parseLesson(body:string):LessonNode[]|null{
   if(!body.startsWith(RICH_PREFIX))return null;
   try{
     const nodes=JSON.parse(body.slice(RICH_PREFIX.length));
-    let count=0,images=0;
+    let count=0,images=0,medias=0;
     const ids=new Set<string>();
     const check=(n:any,depth:number):boolean=>{
       if(++count>30000||depth>40||!n||typeof n!=='object')return false;
@@ -227,6 +256,7 @@ export function parseLesson(body:string):LessonNode[]|null{
         return true;
       }
       if(n.tag==='file')return validLessonFile(n.file);
+      if(n.tag==='media')return ++medias<=30&&validLessonMedia(n.media);
       if(n.tag==='img')return ++images<=12&&validImage(n.src)&&typeof n.alt==='string'&&n.alt.length<=250;
       return Array.isArray(n.children)&&n.children.every((c:any)=>check(c,depth+1));
     };
@@ -245,6 +275,7 @@ export function lessonText(body:string){
     n.tag==='#text'?n.text||'':
     n.tag==='exercise'?n.exercise?.prompt||'':
     n.tag==='file'?n.file?.name||'':
+    n.tag==='media'?n.media?.title||'':
     n.tag==='img'?'':
     n.tag==='br'?'\n':
     (n.children||[]).map(read).join('')+(['p','div','h2','h3','li','tr'].includes(n.tag)?'\n':'');
@@ -253,7 +284,7 @@ export function lessonText(body:string){
 
 export function hasLessonContent(body:string){
   const nodes=parseLesson(body);
-  return !!lessonText(body).trim()||!!nodes?.some(function image(n):boolean{return n.tag==='img'||n.tag==='file'||n.tag==='exercise'||!!n.children?.some(image)});
+  return !!lessonText(body).trim()||!!nodes?.some(function image(n):boolean{return n.tag==='img'||n.tag==='file'||n.tag==='media'||n.tag==='exercise'||!!n.children?.some(image)});
 }
 
 export function appendLessonText(body: string, text: string) {
@@ -300,6 +331,6 @@ export function appendLessonImage(body: string, image: { src: string; alt?: stri
 
 export function materialLessonBody(kind:string,body:string){return kind==='Uppgift'&&!lessonExercises(body).length?encodeLesson([...(parseLesson(body)||[{tag:'p',children:[{tag:'#text',text:body}]}]),{tag:'exercise',exercise:{id:'legacy-task',type:'text',prompt:'Skriv ditt svar på uppgiften',options:[]}}]):body}
 
-export function lessonFiles(body:string):LessonFile[]{const files=new Map<string,LessonFile>();const walk=(nodes:LessonNode[])=>nodes.forEach(n=>{if(n.tag==='file'&&n.file)files.set(n.file.id,n.file);if(n.children)walk(n.children)});walk(parseLesson(body)||[]);return [...files.values()]}
+export function lessonFiles(body:string):LessonFile[]{const files=new Map<string,LessonFile>();const walk=(nodes:LessonNode[])=>nodes.forEach(n=>{if(n.tag==='file'&&n.file)files.set(n.file.id,n.file);if(n.tag==='media'&&n.media?.file)files.set(n.media.file.id,n.media.file);if(n.children)walk(n.children)});walk(parseLesson(body)||[]);return [...files.values()]}
 
 export function removeLessonFiles(body:string,ids:string[]){const nodes=parseLesson(body);if(!nodes)return body;const selected=new Set(ids);const prune=(nodes:LessonNode[]):LessonNode[]=>nodes.filter(n=>n.tag!=='file'||!n.file||!selected.has(n.file.id)).map(n=>({...n,...(n.children?{children:prune(n.children)}:{})}));return encodeLesson(prune(nodes))}

@@ -13,7 +13,8 @@ export async function POST(req:Request){
   if(file.size>MAX)return Response.json({error:'Filen får vara högst 15 MB.'},{status:413});
   const bytes=await file.arrayBuffer();if(bytes.byteLength>MAX)return Response.json({error:'Filen får vara högst 15 MB.'},{status:413});
   const id=crypto.randomUUID(),name=(file.name||'fil').replace(/[\x00-\x1f\x7f]/g,'').slice(0,250)||'fil';
-  await env.BUCKET.put('lesson-files/'+id,bytes,{httpMetadata:{contentType:'application/octet-stream'},customMetadata:{owner:user.userId,name:encodeURIComponent(name)}});
+  const mimeType=typeof file.type==='string'&&/^(audio|video)\/[a-zA-Z0-9.+-]+$/.test(file.type)?file.type:'application/octet-stream';
+  await env.BUCKET.put('lesson-files/'+id,bytes,{httpMetadata:{contentType:mimeType},customMetadata:{owner:user.userId,name:encodeURIComponent(name),mime:mimeType}});
   return Response.json({file:{id,name,size:bytes.byteLength}},{headers:{'Cache-Control':'no-store'}});
  }catch{return Response.json({error:'Filen kunde inte laddas upp. Försök igen.'},{status:400})}
 }
